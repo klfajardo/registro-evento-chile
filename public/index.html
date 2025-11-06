@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>SLIPE 2025 · Estación de Registro</title>
+
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/styles.css">
+
+<!-- Si no tienes Zebra real, deja tu stub en /js/BrowserPrint-3.1.250.min.js -->
+<script src="/js/BrowserPrint-3.1.250.min.js"></script>
+</head>
+<body>
+
+<header class="header">
+  <div class="container">
+    <div class="head-flex">
+      <div class="brand-box">
+        <!-- pon el archivo aquí: /public/img/logo.jpg -->
+        <img src="/img/logo.jpg" alt="SLIPE 2025">
+      </div>
+      <div>
+        <h1>Estación de Registro</h1>
+        <div class="subtle" id="meta">Cargando configuración…</div>
+        <!-- Tabs de navegación -->
+        <nav class="tabs" style="margin-top:8px">
+          <a href="/index.html"    class="tab">Registro</a>
+          <a href="/charla.html"   class="tab">Control de acceso</a>
+          <a href="/dashboard.html" class="tab">Dashboard</a>
+        </nav>
+      </div>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+  <!-- Columna izquierda -->
+  <section class="card">
+    <h2 class="section-title">Escanea o pega UUID y presiona Enter</h2>
+    <div class="row">
+      <input id="scan" class="input" type="text" autofocus placeholder="UUID…" />
+      <div id="info" class="info">Esperando escaneo…</div>
+      <div class="actions">
+        <button id="btnPay"   class="btn secondary" disabled>Pagar (solo sede)</button>
+        <button id="btnPrint" class="btn accent"    disabled>Imprimir credencial</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Columna derecha -->
+  <aside class="card">
+    <h2 class="section-title">Alta nueva (solo sede)</h2>
+    <div class="form-grid">
+      <input id="dni"         class="input" placeholder="DNI" />
+      <input id="nombres"     class="input" placeholder="Nombres" />
+      <input id="apellidos"   class="input" placeholder="Apellidos" />
+      <input id="institucion" class="input" placeholder="Institución" />
+      <!-- Mantenemos el id 'puesto' para no romper tu JS, pero con etiqueta visual de Profesión -->
+      <input id="puesto"      class="input" placeholder="Profesión" />
+      <!-- NUEVOS CAMPOS -->
+      <input id="correo"      class="input" placeholder="Correo electrónico" />
+      <input id="pais"        class="input" placeholder="País" />
+      <button id="btnAlta"    class="btn">Crear</button>
+    </div>
+    <p class="subtle" style="margin-top:10px">Los registros desde cero solo se permiten en la <strong>sede principal</strong>.</p>
+  </aside>
+</main>
+
+<footer class="footer">SLIPE 2025 · Puerto Varas, Chile · 11–14 de noviembre</footer>
+
+<!-- Tu lógica principal -->
+<script type="module" src="/js/app.js"></script>
+
+<!-- Guardas para evitar falsos “impreso” cuando no hay impresora o cuando falla -->
+<script>
+  (function () {
+    const info = document.getElementById('info');
+    const btnPrint = document.getElementById('btnPrint');
+
+    function disablePrintWithMessage(msg) {
+      if (!btnPrint) return;
+      btnPrint.setAttribute('disabled', 'disabled');
+      btnPrint.title = msg;
+      if (info) {
+        info.classList.remove('ok','bad');
+        info.classList.add('bad');
+        info.textContent = msg;
+      }
+    }
+
+    // 1) Si NO existe BrowserPrint, bloquear impresión siempre
+    const hasBP = !!(window.BrowserPrint && typeof window.BrowserPrint.getDefaultDevice === 'function');
+    if (!hasBP) {
+      disablePrintWithMessage('Impresora no detectada.');
+    } else {
+      // 2) Patch defensivo: asegurar que los errores de send() propaguen rechazo
+      try {
+        const _origGet = window.BrowserPrint.getDefaultDevice.bind(window.BrowserPrint);
+        window.BrowserPrint.getDefaultDevice = function (type, onSuccess, onError) {
+          return _origGet(type, function (printer) {
+            if (printer && typeof printer.send === 'function') {
+              const _origSend = printer.send.bind(printer);
+              printer.send = function (zpl, ok, err) {
+                _origSend(zpl, function (resp) {
+                  // éxito → continúa normal
+                  if (typeof ok === 'function') ok(resp);
+                }, function (e) {
+                  // fallo real → informa en UI; NO marcar como impreso
+                  disablePrintWithMessage('Fallo de impresión. No se marcó como impreso.');
+                  if (typeof err === 'function') err(e);
+                });
+              };
+            }
+            if (typeof onSuccess === 'function') onSuccess(printer);
+          }, function (e) {
+            disablePrintWithMessage('Impresora no disponible. No se marcó como impreso.');
+            if (typeof onError === 'function') onError(e);
+          });
+        };
+      } catch (e) {
+        // si el patch falla, al menos no habilitamos impresión
+        disablePrintWithMessage('Error inicializando impresora. No se marcó como impreso.');
+      }
+    }
+
+    // 3) Si otro script intenta habilitar el botón sin impresora, lo re-bloqueamos
+    const guardEnable = new MutationObserver(() => {
+      if (!window.BrowserPrint || typeof window.BrowserPrint.getDefaultDevice !== 'function') {
+        disablePrintWithMessage('Impresora no detectada. No se marcó como impreso.');
+      }
+    });
+    guardEnable.observe(btnPrint, { attributes: true, attributeFilter: ['disabled'] });
+  })();
+</script>
+
+</body>
+</html>

@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>SLIPE 2025 · Control de Acceso</title>
+
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+
+<!-- Header compartido -->
+<header class="header">
+  <div class="container">
+    <div class="head-flex">
+      <div class="brand-box">
+        <img src="/img/logo.jpg" alt="SLIPE 2025">
+      </div>
+      <div>
+        <h1>Control de Acceso</h1>
+        <div id="meta" class="subtle">Cargando configuración…</div>
+        <nav class="tabs" style="margin-top:8px">
+          <a href="/index.html"     class="tab">Registro</a>
+          <a href="/charla.html"    class="tab">Control de acceso</a>
+          <a href="/dashboard.html" class="tab">Dashboard</a>
+        </nav>
+      </div>
+    </div>
+  </div>
+</header>
+
+<main class="wrap" style="grid-template-columns:1fr">
+  <section class="card">
+    <h2 class="section-title">Escanea o pega UUID y presiona Enter</h2>
+
+    <div class="row" style="margin-bottom:8px">
+      <input id="scan" class="input" placeholder="UUID…" autofocus />
+    </div>
+
+    <!-- Mensajes de estado -->
+    <div id="msg" class="info">Esperando escaneo…</div>
+
+    <!-- Contador/estado de sesión -->
+    <div class="row" style="margin-top:14px">
+      <div class="card" style="padding:14px; text-align:center">
+        <div style="color:var(--muted); font-weight:600; margin-bottom:6px">Ingresos acumulados</div>
+        <div id="count" style="font-size:34px; font-weight:800; color:var(--brand-700)">—</div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="footer">SLIPE 2025 · Puerto Varas, Chile · 11–14 de noviembre</footer>
+
+<script type="module" src="/js/charla.js"></script>
+</body>
+</html>

@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>SLIPE 2025 · Dashboard</title>
+
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+
+<header class="header">
+  <div class="container">
+    <div class="head-flex">
+      <div class="brand-box"><img src="/img/logo.jpg" alt="SLIPE 2025"></div>
+      <div>
+        <h1>Dashboard en vivo</h1>
+        <div id="meta" class="subtle">Estado general del evento</div>
+
+        <!-- Links simples, sin clases de botón -->
+        <nav style="margin-top:12px; display:flex; gap:12px; flex-wrap:wrap;">
+          <a href="/index.html">Registro</a>
+          <a href="/charla.html">Control de acceso</a>
+          <a href="/dashboard.html">Dashboard</a>
+        </nav>
+      </div>
+    </div>
+  </div>
+</header>
+
+<main class="wrap" style="grid-template-columns:1fr;">
+  <!-- KPIs -->
+  <section class="card">
+    <h2 class="section-title">Resumen</h2>
+    <div class="kpi-grid">
+      <div class="kpi">
+        <div class="kpi-label">Total</div>
+        <div id="kTotal" class="kpi-value">—</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-label">Pagados</div>
+        <div id="kPagados" class="kpi-value">—</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-label">Impresos</div>
+        <div id="kImpresos" class="kpi-value">—</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Sesiones (sin barras) -->
+  <section class="card">
+    <h2 class="section-title">Accesos por sesión</h2>
+    <div id="kSesionesList" class="sess-list empty">Sin accesos registrados todavía.</div>
+  </section>
+</main>
+
+<footer class="footer">SLIPE 2025 · Puerto Varas, Chile · 11–14 de noviembre</footer>
+
+<script type="module" src="/js/dashboard.js"></script>
+<noscript>Activa JavaScript para ver el dashboard.</noscript>
+</body>
+</html>
