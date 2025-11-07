@@ -5,8 +5,9 @@ import multer from 'multer';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { config } from 'dotenv';
+import { config as dotenvConfig } from 'dotenv';
 import { v4 as uuidv4 } from 'uuid';
+
 import {
   upsertAsistenteByDni,
   getAsistenteByUUID,
@@ -16,7 +17,7 @@ import {
   listAll
 } from './airtable.js';
 
-config();
+dotenvConfig();
 
 const app  = express();
 const port = process.env.PORT || 3000;
@@ -24,15 +25,16 @@ const port = process.env.PORT || 3000;
 const __filename = fileURLToPath(import.meta.url);
 const __dirname  = path.dirname(__filename);
 
+// --------- Middlewares base ----------
 app.use(bodyParser.json({ limit: '2mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
-// ------- Respaldo local CSV si Airtable cae -------
+// --------- Respaldo local CSV si Airtable cae ----------
 const FALLBACK_DIR  = path.join(__dirname, 'fallback');
 const FALLBACK_FILE = path.join(FALLBACK_DIR, 'respaldo.csv');
 if (!fs.existsSync(FALLBACK_DIR)) fs.mkdirSync(FALLBACK_DIR, { recursive: true });
 
-// (Opcional) token admin simple
+// (Opcional) token admin simple (si no está definido en .env, se deja pasar)
 function requireAdminToken(req, res, next) {
   const token = req.headers['x-admin-token'];
   if (!process.env.ADMIN_API_TOKEN) return next();
@@ -41,6 +43,9 @@ function requireAdminToken(req, res, next) {
   }
   next();
 }
+
+// --------- Healthcheck para Render u otros ----------
+app.get('/healthz', (_, res) => res.type('text').send('ok'));
 
 // ================== ENDPOINTS ==================
 
@@ -81,6 +86,7 @@ app.post('/api/import', requireAdminToken, upload.single('excel'), async (req, r
     res.json({ success: true, imported: count });
   } catch (err) {
     console.error(err);
+    try { if (req.file?.path) fs.unlinkSync(req.file.path); } catch {}
     res.status(500).json({ success: false, message: 'Error importando', error: err.message });
   }
 });
@@ -173,6 +179,101 @@ app.get('/api/attendee/:uuid', async (req, res) => {
     clearTimeout(wd);
     console.error('[attendee] ERROR:', err?.message || err);
     return res.status(500).json({ success: false, message: 'ERROR_BACKEND', error: String(err?.message || err) });
+  }
+});
+
+// 3.bis) Búsqueda flexible (uuid | dni | correo | nombre)
+app.get('/api/search', async (req, res) => {
+  const byRaw = String(req.query.by || 'uuid').toLowerCase();
+  const qRaw  = String(req.query.q  || '').trim();
+
+  if (!qRaw) {
+    return res.status(400).json({ success:false, message:'Parámetro q requerido' });
+  }
+  const by = ['uuid','dni','correo','nombre'].includes(byRaw) ? byRaw : 'uuid';
+
+  // normalizador para búsquedas "humanas"
+  const norm = (s) => String(s || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+
+  try {
+    // Caso rápido: UUID exacto → usa ruta optimizada
+    if (by === 'uuid') {
+      const rec = await getAsistenteByUUID(qRaw);
+      const out = [];
+      if (rec?.fields) {
+        const f = rec.fields;
+        out.push({
+          uuid          : f.uuid,
+          dni           : f.dni || '',
+          nombres       : f.nombres || '',
+          apellidos     : f.apellidos || '',
+          institucion   : f.institucion || '',
+          puesto        : f.puesto || '',
+          correo        : f.correo || '',
+          pais          : f.pais || '',
+          estado_pago   : f.estado_pago || 'NO_PAGADO',
+          se_imprimio_at: f.se_imprimio_at || null
+        });
+      }
+      return res.json({ success:true, results: out });
+    }
+
+    // Resto de modos → listar y filtrar en memoria
+    const rows = await listAll(process.env.AIRTABLE_TABLE_ASISTENTES, {
+      fields: [
+        'uuid','dni','nombres','apellidos','institucion','puesto',
+        'correo','pais','estado_pago','se_imprimio_at'
+      ]
+    });
+
+    const nq = norm(qRaw);
+    const results = [];
+
+    for (const r of rows) {
+      const f = r.fields || {};
+      let hit = false;
+
+      if (by === 'dni') {
+        hit = norm(f.dni).includes(nq);
+      } else if (by === 'correo') {
+        hit = norm(f.correo).includes(nq);
+      } else { // 'nombre' = nombres + apellidos
+        const full = norm(`${f.nombres || ''} ${f.apellidos || ''}`.trim());
+        hit = full.includes(nq);
+      }
+
+      if (hit) {
+        results.push({
+          uuid          : f.uuid,
+          dni           : f.dni || '',
+          nombres       : f.nombres || '',
+          apellidos     : f.apellidos || '',
+          institucion   : f.institucion || '',
+          puesto        : f.puesto || '',
+          correo        : f.correo || '',
+          pais          : f.pais || '',
+          estado_pago   : f.estado_pago || 'NO_PAGADO',
+          se_imprimio_at: f.se_imprimio_at || null
+        });
+      }
+    }
+
+    // orden y límite sanos
+    if (by === 'nombre') {
+      results.sort((a,b) => {
+        const an = `${a.apellidos || ''} ${a.nombres || ''}`.toLowerCase();
+        const bn = `${b.apellidos || ''} ${b.nombres || ''}`.toLowerCase();
+        return an.localeCompare(bn);
+      });
+    }
+
+    return res.json({ success:true, results: results.slice(0, 50) });
+  } catch (err) {
+    console.error('[search] ERROR:', err?.message || err);
+    return res.status(500).json({ success:false, message:'ERROR_BACKEND', error: String(err?.message || err) });
   }
 });
 
