@@ -269,20 +269,23 @@ btnPrint?.addEventListener('click', async ()=>{
 });
 
 // ====== ZEBRA: impresión física (HORIZONTAL) ======
-// Solo: NOMBRE, APELLIDOS, PAÍS + QR (sin correo). QR a la izquierda, texto a la derecha.
-// Tamaños adaptativos y saneo de caracteres para evitar símbolos raros.
+// Solo: NOMBRE, APELLIDOS, PAÍS + QR (sin correo).
+// El QR codifica la URL a charla.html con ?uuid=...&auto=1
 function printPhysical(att, maxRetry = 5){
   // Normaliza/ASCII
   const ascii = s => String(s || '')
-    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')  // quita acentos
-    .replace(/[^\x20-\x7E]/g, '');                    // ASCII seguro
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^\x20-\x7E]/g, '');
 
   const NOMBRE    = ascii((att.nombres   || '').trim()).toUpperCase();
   const APELLIDOS = ascii((att.apellidos || '').trim()).toUpperCase();
   const PAIS      = ascii((att.pais      || '').trim()).toUpperCase();
   const UUID      = String(att.uuid || '');
 
-  // Ajuste simple de tamaño por longitud (1 línea)
+  // URL para auto check-in en charla.html
+  const QR_URL = `${location.origin}/charla.html?uuid=${encodeURIComponent(UUID)}&auto=1`;
+
+  // Ajuste simple de tamaño por longitud
   const sizeName    = (NOMBRE.length    > 20) ? 90 : 110;
   const sizeLast    = (APELLIDOS.length > 20) ? 90 : 110;
   const sizeCountry = (PAIS.length      > 18) ? 60 : 70;
@@ -300,10 +303,10 @@ function printPhysical(att, maxRetry = 5){
 ^LS0
 ^LH0,0
 
-^FX ---- QR grande a la izquierda ----
+^FX ---- QR grande a la izquierda (URL con uuid) ----
 ^FO40,60
 ^BQN,2,8
-^FDLA,${escapeZPL(UUID)}^FS
+^FDLA,${escapeZPL(QR_URL)}^FS
 
 ^FX ---- Texto a la derecha: Nombre, Apellidos, País ----
 ^FO280,40
@@ -330,7 +333,7 @@ function printPhysical(att, maxRetry = 5){
       window.BrowserPrint.getDefaultDevice('printer', function(printer){
         if(!printer){
           if(attempts >= maxRetry) return reject(new Error('No se encontró impresora Zebra'));
-          renderInfo('No se encontró impresora. Reintentando...', 'bad');
+        renderInfo('No se encontró impresora. Reintentando...', 'bad');
           return setTimeout(tryOnce, 1200);
         }
         printer.send(zpl, function(){
