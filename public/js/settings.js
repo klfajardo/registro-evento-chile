@@ -1,31 +1,36 @@
-<script type="module">
-// settings.js
+// /public/js/settings.js  (AUTO-INYECTA UI + PARCHEA FETCH) — una sola vez
 (function(){
+  if (window.__CFG_BOOTSTRAPPED) return; // idempotencia
+  window.__CFG_BOOTSTRAPPED = true;
+
   const DEFAULT_CFG = {
-    ROL: 'staff',          // 'admin' | 'cajero' | 'staff'
-    SEDE: 'sede',          // 'sede' | 'remoto' | etc
-    SESSION_ID: '',        // ej. 'charla_gallito_1'
-    API_BASE: '',          // ej. 'https://registro-evento-chile.onrender.com'
-    ADMIN_TOKEN: ''        // opcional: para endpoints protegidos (import)
+    ROL: 'staff',
+    SEDE: 'sede',
+    SESSION_ID: '',
+    API_BASE: '',
+    ADMIN_TOKEN: ''
   };
 
-  function safeJSON(str){ try{ return JSON.parse(str); }catch(_){ return null; } }
-  function readLS(){ return safeJSON(localStorage.getItem('slp_cfg')) || {}; }
-
-  function fromURL(){
+  const safeJSON = (s)=>{ try { return JSON.parse(s); } catch(_) { return null; } };
+  const readLS   = ()=> safeJSON(localStorage.getItem('slp_cfg')) || {};
+  const fromURL  = ()=>{
     const p = new URLSearchParams(location.search);
-    const get = k => p.get(k) || p.get(k.toLowerCase()) || undefined;
     const keys = ['ROL','SEDE','SESSION_ID','API_BASE','ADMIN_TOKEN'];
     const out = {};
-    for (const k of keys){ const v = get(k); if (v) out[k] = v; }
+    for (const k of keys){
+      const v = p.get(k) || p.get(k.toLowerCase());
+      if (v) out[k] = v;
+    }
     return out;
-  }
+  };
 
-  const CFG = Object.assign({}, DEFAULT_CFG, readLS(), fromURL());
+  // Usa window.CFG si ya lo definiste inline; si no, construye uno
+  const CFG = window.CFG ? Object.assign({}, DEFAULT_CFG, window.CFG, readLS(), fromURL())
+                         : Object.assign({}, DEFAULT_CFG, readLS(), fromURL());
   localStorage.setItem('slp_cfg', JSON.stringify(CFG));
   window.CFG = CFG;
 
-  // helper para pintar meta si existe
+  // Pinta meta si existe
   function paintMeta(){
     const meta = document.getElementById('meta');
     if(!meta) return;
@@ -35,64 +40,149 @@
   }
   paintMeta();
 
-  // Exponer guardado
-  window.saveCFG = (patch) => {
+  // Guardado público
+  window.saveCFG = (patch)=>{
     Object.assign(CFG, patch);
     localStorage.setItem('slp_cfg', JSON.stringify(CFG));
     paintMeta();
   };
 
-  // Wire modal si existe en el DOM
+  // PARCHEA fetch() para prefijar API_BASE en rutas /api/...
+  (function patchFetch(){
+    if (!CFG.API_BASE) return;
+    try{
+      const abs = (u)=> /^https?:\/\//i.test(u);
+      const join = (base, path)=>{
+        const b = base.endsWith('/') ? base.slice(0,-1) : base;
+        const p = path.startsWith('/') ? path : ('/' + path);
+        return b + p;
+      };
+      const _fetch = window.fetch.bind(window);
+      window.fetch = function(resource, init){
+        try{
+          if (typeof resource === 'string' && resource.startsWith('/api/')){
+            resource = join(CFG.API_BASE, resource);
+          } else if (resource && resource.url && !abs(resource.url) && String(resource.url).startsWith('/api/')) {
+            resource = new Request(join(CFG.API_BASE, resource.url), resource);
+          }
+        }catch(_){}
+        return _fetch(resource, init);
+      };
+    }catch(_){}
+  })();
+
+  // AUTO-UI: si NO existe botón/modal, los inyecta
   document.addEventListener('DOMContentLoaded', ()=>{
-    const btnOpen  = document.getElementById('btnSettings');
-    const modal    = document.getElementById('settingsModal');
-    const form     = document.getElementById('settingsForm');
+    let btnOpen  = document.getElementById('btnSettings');
+    let modal    = document.getElementById('settingsModal');
+    let form     = document.getElementById('settingsForm');
+
+    if (!btnOpen || !modal || !form){
+      // Inyectar estilos mínimos del modal
+      const style = document.createElement('style');
+      style.textContent = `
+        #settingsModal.is-hidden{display:none!important}
+        #settingsModal{position:fixed;inset:0;background:rgba(0,0,0,.35);display:grid;place-items:center;z-index:9999}
+      `;
+      document.head.appendChild(style);
+
+      // Insertar botón al final del primer <nav> del header, o flotar si no hay nav
+      const header = document.querySelector('header .container') || document.body;
+      let nav = header.querySelector('nav');
+      if (!nav){
+        nav = document.createElement('div');
+        nav.style.cssText = 'position:fixed;right:12px;bottom:12px;z-index:9999';
+        header.appendChild(nav);
+      }
+
+      btnOpen = document.createElement('a');
+      btnOpen.id = 'btnSettings';
+      btnOpen.href = '#';
+      btnOpen.textContent = '⚙ Ajustes';
+      btnOpen.style.marginLeft = '12px';
+      nav.appendChild(btnOpen);
+
+      // Modal + form
+      modal = document.createElement('div');
+      modal.id = 'settingsModal';
+      modal.className = 'is-hidden';
+      modal.innerHTML = `
+        <div class="card" style="width:min(520px,92vw)" role="dialog" aria-modal="true">
+          <h3 class="section-title" style="margin-top:0">Ajustes del dispositivo</h3>
+          <form id="settingsForm" class="form-grid" style="margin-top:8px">
+            <label>
+              <div class="subtle" style="margin-bottom:6px">Rol</div>
+              <select id="cfgRol" class="input">
+                <option value="staff">staff</option>
+                <option value="cajero">cajero</option>
+                <option value="admin">admin</option>
+              </select>
+            </label>
+            <label>
+              <div class="subtle" style="margin-bottom:6px">Sede / Ubicación</div>
+              <input id="cfgSede" class="input" placeholder="ej: sede, sala-1, recepción" />
+            </label>
+            <label>
+              <div class="subtle" style="margin-bottom:6px">SESSION_ID (solo charlas)</div>
+              <input id="cfgSession" class="input" placeholder="ej: charla_gallito_1" />
+            </label>
+            <label>
+              <div class="subtle" style="margin-bottom:6px">API_BASE (opcional)</div>
+              <input id="cfgApiBase" class="input" placeholder="https://tu-api" />
+            </label>
+            <label>
+              <div class="subtle" style="margin-bottom:6px">ADMIN_TOKEN (opcional /api/import)</div>
+              <input id="cfgAdminToken" class="input" placeholder="token admin" />
+            </label>
+            <div class="actions" style="grid-template-columns:1fr 1fr; margin-top:12px">
+              <button type="button" id="btnCloseSettings" class="btn secondary">Cancelar</button>
+              <button type="submit" class="btn">Guardar</button>
+            </div>
+            <div class="actions" style="grid-template-columns:1fr; margin-top:8px">
+              <button type="button" id="btnResetSettings" class="btn accent">Resetear (limpiar este dispositivo)</button>
+            </div>
+          </form>
+        </div>`;
+      document.body.appendChild(modal);
+
+      form = modal.querySelector('#settingsForm');
+    }
+
     const btnClose = document.getElementById('btnCloseSettings');
     const btnReset = document.getElementById('btnResetSettings');
+    const $ = (id)=> form.querySelector('#'+id);
 
-    if(!btnOpen || !modal || !form) return;
-
-    const $ = id => form.querySelector(`#${id}`);
-
-    // Cargar valores
     const fill = ()=>{
-      $('cfgRol').value        = CFG.ROL;
-      $('cfgSede').value       = CFG.SEDE;
-      $('cfgSession').value    = CFG.SESSION_ID || '';
-      $('cfgApiBase').value    = CFG.API_BASE || '';
-      $('cfgAdminToken').value = CFG.ADMIN_TOKEN || '';
+      if ($('cfgRol'))        $('cfgRol').value        = CFG.ROL;
+      if ($('cfgSede'))       $('cfgSede').value       = CFG.SEDE;
+      if ($('cfgSession'))    $('cfgSession').value    = CFG.SESSION_ID || '';
+      if ($('cfgApiBase'))    $('cfgApiBase').value    = CFG.API_BASE || '';
+      if ($('cfgAdminToken')) $('cfgAdminToken').value = CFG.ADMIN_TOKEN || '';
     };
 
-    // Abrir
-    btnOpen.addEventListener('click', ()=>{
-      fill();
-      modal.classList.remove('is-hidden');
-    });
-    // Cerrar
+    btnOpen.addEventListener('click', (e)=>{ e.preventDefault(); fill(); modal.classList.remove('is-hidden'); });
     btnClose?.addEventListener('click', ()=> modal.classList.add('is-hidden'));
     modal.addEventListener('click', (e)=>{ if(e.target===modal) modal.classList.add('is-hidden'); });
 
-    // Guardar
     form.addEventListener('submit', (e)=>{
       e.preventDefault();
-      saveCFG({
-        ROL: $('cfgRol').value.trim() || 'staff',
-        SEDE: $('cfgSede').value.trim() || 'sede',
-        SESSION_ID: $('cfgSession').value.trim(),
-        API_BASE: $('cfgApiBase').value.trim(),
-        ADMIN_TOKEN: $('cfgAdminToken').value.trim()
+      window.saveCFG({
+        ROL: $('cfgRol')?.value?.trim() || 'staff',
+        SEDE: $('cfgSede')?.value?.trim() || 'sede',
+        SESSION_ID: $('cfgSession')?.value?.trim() || '',
+        API_BASE: $('cfgApiBase')?.value?.trim() || '',
+        ADMIN_TOKEN: $('cfgAdminToken')?.value?.trim() || ''
       });
       modal.classList.add('is-hidden');
-      // Aviso visual simple
-      const hint = document.getElementById('settingsHint');
-      if (hint){ hint.textContent = 'Ajustes guardados.'; setTimeout(()=>hint.textContent='', 2000); }
+      // Si cambiaste API_BASE, mejor refrescar para re-parchear fetch con el nuevo valor:
+      if ($('cfgApiBase') && $('cfgApiBase').value.trim() !== CFG.API_BASE){
+        location.reload();
+      }
     });
 
-    // Reset
     btnReset?.addEventListener('click', ()=>{
       localStorage.removeItem('slp_cfg');
-      window.location.reload();
+      location.reload();
     });
   });
 })();
-</script>
