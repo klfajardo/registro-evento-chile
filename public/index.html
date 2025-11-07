@@ -9,7 +9,25 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/styles.css">
 
-  <!-- Si no tienes Zebra real, coloca el stub en /public/js/BrowserPrint-3.1.250.min.js -->
+  <!-- Mini estilos para la lista de resultados -->
+  <style>
+    .results.is-hidden{ display:none; }
+    .results{
+      margin-top:8px; border:1px solid var(--border); border-radius:10px; background:#fff;
+      max-height:320px; overflow:auto; box-shadow: var(--shadow);
+    }
+    .result-item{
+      padding:10px 12px; cursor:pointer; border-bottom:1px solid var(--border);
+    }
+    .result-item:last-child{ border-bottom:none; }
+    .result-item:hover{ background:#f6f8fb; }
+    .ri-main{ font-weight:700; color:var(--text); }
+    .ri-sub{ font-size:12px; color:var(--muted); margin-top:2px; }
+    .search-row{ display:grid; grid-template-columns: 170px 1fr; gap:10px; }
+    @media (max-width: 640px){ .search-row{ grid-template-columns:1fr; } }
+  </style>
+
+  <!-- Zebra (si no hay impresora real, pon el stub local) -->
   <script src="/js/BrowserPrint-3.1.250.min.js"></script>
 </head>
 <body>
@@ -18,18 +36,15 @@
   <div class="container">
     <div class="head-flex">
       <div class="brand-box">
-        <!-- Asegúrate de tener /public/img/logo.jpg -->
         <img src="/img/logo.jpg" alt="SLIPE 2025">
       </div>
       <div>
         <h1>Estación de Registro</h1>
         <div class="subtle" id="meta">Cargando configuración…</div>
-
-        <!-- Tabs de navegación (enlaces simples) -->
-        <nav class="tabs" style="margin-top:8px">
-          <a href="/index.html"      class="tab">Registro</a>
-          <a href="/charla.html"     class="tab">Control de acceso</a>
-          <a href="/dashboard.html"  class="tab">Dashboard</a>
+        <nav class="tabs" style="margin-top:8px; display:flex; gap:12px; flex-wrap:wrap;">
+          <a href="/index.html"     class="tab">Registro</a>
+          <a href="/charla.html"    class="tab">Control de acceso</a>
+          <a href="/dashboard.html" class="tab">Dashboard</a>
         </nav>
       </div>
     </div>
@@ -39,10 +54,24 @@
 <main class="wrap">
   <!-- Columna izquierda -->
   <section class="card">
-    <h2 class="section-title">Escanea o pega UUID y presiona Enter</h2>
+    <h2 class="section-title">Buscar asistente</h2>
     <div class="row">
-      <input id="scan" class="input" type="text" autofocus placeholder="UUID…" />
-      <div id="info" class="info">Esperando escaneo…</div>
+      <div class="search-row">
+        <select id="searchBy" class="input" aria-label="Buscar por">
+          <option value="uuid">UUID (QR)</option>
+          <option value="dni">DNI</option>
+          <option value="correo">Correo</option>
+          <option value="nombre">Nombre + Apellido</option>
+        </select>
+        <input id="scan" class="input" type="text" autofocus placeholder="Escribe y Enter…" />
+      </div>
+
+      <!-- Lista de resultados (solo cuando hay >1) -->
+      <div id="results" class="results is-hidden" role="listbox" aria-label="Resultados de búsqueda"></div>
+
+      <!-- Info del seleccionado -->
+      <div id="info" class="info">Escribe el valor y presiona Enter. Si hay varios, elige de la lista.</div>
+
       <div class="actions">
         <button id="btnPay"   class="btn secondary" disabled>Pagar (solo sede)</button>
         <button id="btnPrint" class="btn accent"    disabled>Imprimir credencial</button>
@@ -58,23 +87,23 @@
       <input id="nombres"     class="input" placeholder="Nombres" />
       <input id="apellidos"   class="input" placeholder="Apellidos" />
       <input id="institucion" class="input" placeholder="Institución" />
-      <!-- Conservamos id 'puesto' (tu JS lo usa), rotulado como Profesión -->
       <input id="puesto"      class="input" placeholder="Profesión" />
-      <!-- Campos extra -->
       <input id="correo"      class="input" placeholder="Correo electrónico" />
       <input id="pais"        class="input" placeholder="País" />
       <button id="btnAlta"    class="btn">Crear</button>
     </div>
-    <p class="subtle" style="margin-top:10px">Los registros desde cero solo se permiten en la <strong>sede principal</strong>.</p>
+    <p class="subtle" style="margin-top:10px">
+      Los registros desde cero solo se permiten en la <strong>sede principal</strong>.
+    </p>
   </aside>
 </main>
 
 <footer class="footer">SLIPE 2025 · Puerto Varas, Chile · 11–14 de noviembre</footer>
 
-<!-- Carga primero settings.js para exponer window.CFG -->
+<!-- Ajustes por dispositivo -->
 <script src="/js/settings.js"></script>
 
-<!-- Lógica principal (usa window.CFG si existe) -->
+<!-- Lógica principal de index -->
 <script type="module" src="/js/app.js"></script>
 
 <!-- Guardas para NO marcar impreso si Zebra falla o no está -->
@@ -94,12 +123,10 @@
       }
     }
 
-    // 1) Si NO existe BrowserPrint, bloquear impresión siempre
     const hasBP = !!(window.BrowserPrint && typeof window.BrowserPrint.getDefaultDevice === 'function');
     if (!hasBP) {
       disablePrintWithMessage('Impresora no detectada.');
     } else {
-      // 2) Patch defensivo: asegurar que errores de send() se propaguen
       try {
         const _origGet = window.BrowserPrint.getDefaultDevice.bind(window.BrowserPrint);
         window.BrowserPrint.getDefaultDevice = function (type, onSuccess, onError) {
@@ -126,7 +153,6 @@
       }
     }
 
-    // 3) Si otro script intenta habilitar el botón sin impresora, lo re-bloqueamos
     const guardEnable = new MutationObserver(() => {
       if (!window.BrowserPrint || typeof window.BrowserPrint.getDefaultDevice !== 'function') {
         disablePrintWithMessage('Impresora no detectada. No se marcó como impreso.');
