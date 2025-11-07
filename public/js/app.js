@@ -1,35 +1,51 @@
-// --- CARGA CONFIG ---
-async function loadConfig(){ const r=await fetch('/config.json'); return r.json(); }
-let CFG = await loadConfig();
+// app.js — usa window.CFG en lugar de /config.json
 
-// --- ELEMENTOS ---
-const elScan  = document.getElementById('scan');
-const elInfo  = document.getElementById('info');
-const btnPay  = document.getElementById('btnPay');
-const btnPrint= document.getElementById('btnPrint');
-const meta    = document.getElementById('meta');
+// ====== CONFIG (inyectada por settings.js) ======
+const CFG = window.CFG || { ROL: 'staff', SEDE: 'sede' };
 
-meta.textContent = `ROL: ${CFG.ROL} | SEDE: ${CFG.SEDE}`;
+// Base opcional para apuntar a otra API (deja vacío para usar mismo host)
+const API_BASE = (CFG.API_BASE || '').replace(/\/+$/, '');
+const withBase = (path) => (API_BASE ? (API_BASE + path) : path);
 
+// Si definiste ADMIN_TOKEN en Ajustes, lo mandamos en los fetch
+function addAdminHeader(hdrs = {}) {
+  const out = { ...hdrs };
+  if (CFG.ADMIN_TOKEN) out['x-admin-token'] = CFG.ADMIN_TOKEN;
+  return out;
+}
+
+// ====== ELEMENTOS ======
+const elScan   = document.getElementById('scan');
+const elInfo   = document.getElementById('info');
+const btnPay   = document.getElementById('btnPay');
+const btnPrint = document.getElementById('btnPrint');
+
+// Pintar meta si existe (settings.js ya suele hacerlo, esto es por si acaso)
+const meta = document.getElementById('meta');
+if (meta) {
+  const bits = [`ROL: ${CFG.ROL}`, `SEDE: ${CFG.SEDE}`];
+  if (CFG.SESSION_ID) bits.push(`SESIÓN: ${CFG.SESSION_ID}`);
+  meta.textContent = bits.join(' | ');
+}
+
+// Estado
 let current  = null;   // { uuid, nombres, apellidos, institucion, puesto|profesion, estado_pago, se_imprimio_at, correo, pais }
-let busyScan = false;  // evita reentradas en búsqueda
+let busyScan = false;
 let busyPay  = false;
 let busyPrint= false;
 
-// --- HELPERS UI/NET ---
+// ====== HELPERS UI/NET ======
 function renderInfo(msg, cls=''){ elInfo.className = 'info ' + (cls||''); elInfo.innerHTML = msg; }
+function setButtons(payDisabled, printDisabled){ btnPay.disabled = payDisabled; btnPrint.disabled = printDisabled; }
+function canUsePrinter(){ return !!(window.BrowserPrint && typeof window.BrowserPrint.getDefaultDevice === 'function'); }
 
-function setButtons(payDisabled, printDisabled){
-  btnPay.disabled   = payDisabled;
-  btnPrint.disabled = printDisabled;
-}
-
-// fetch con timeout
+// fetch con timeout + API_BASE + admin header
 async function fetchJSON(url, opt = {}, timeoutMs = 8000){
+  const full = url.startsWith('http') ? url : withBase(url);
   const ctrl = new AbortController();
   const id = setTimeout(()=>ctrl.abort(new Error('timeout')), timeoutMs);
   try {
-    const r = await fetch(url, { ...opt, signal: ctrl.signal });
+    const r = await fetch(full, { ...opt, headers: addAdminHeader(opt.headers || {}), signal: ctrl.signal, cache:'no-store' });
     if (!r.ok) return { success:false, status:r.status, message:`HTTP ${r.status}` };
     const ct = r.headers.get('content-type') || '';
     if (!ct.includes('application/json')) return { success:false, message:'Respuesta no-JSON' };
@@ -41,15 +57,11 @@ async function fetchJSON(url, opt = {}, timeoutMs = 8000){
   }
 }
 
-function canUsePrinter(){
-  return !!(window.BrowserPrint && typeof window.BrowserPrint.getDefaultDevice === 'function');
-}
-
-// --- ESCANEO (lector HID pega uuid y Enter) ---
+// ====== ESCANEO (Enter) ======
 elScan.addEventListener('keydown', async (e)=>{
   if(e.key !== 'Enter') return;
-  if(e.repeat) return;   // evita “pegas Enter sostenido”
-  if(busyScan) return;   // evita llamadas concurrentes
+  if(e.repeat) return;   // evita “Enter sostenido”
+  if(busyScan) return;
 
   const uuid = elScan.value.trim();
   if(!uuid) return;
@@ -59,7 +71,7 @@ elScan.addEventListener('keydown', async (e)=>{
   setButtons(true, true);
   renderInfo('Buscando…');
 
-  // asegúrate que pinte antes del fetch
+  // Asegura pintar antes del fetch
   await new Promise(r=>requestAnimationFrame(r));
 
   const data = await fetchJSON('/api/attendee/'+encodeURIComponent(uuid));
@@ -101,7 +113,7 @@ elScan.addEventListener('keydown', async (e)=>{
   busyScan = false;
 });
 
-// --- PAGO (solo sede) ---
+// ====== PAGO (solo sede) ======
 btnPay.addEventListener('click', async ()=>{
   if(!current || busyPay) return;
   busyPay = true;
@@ -122,7 +134,7 @@ btnPay.addEventListener('click', async ()=>{
     current.estado_pago = 'PAGADO';
     const printAllowed = canUsePrinter();
     setButtons(true, !printAllowed);
-    renderInfo(printAllowed ? 'Pago registrado. Puedes imprimir.' : 'Pago registrado. <b>Conecta/instala la Zebra</b> para imprimir.', printAllowed ? 'ok' : 'bad');
+    renderInfo(printAllowed ? 'Pago registrado. Puedes imprimir.' : 'Pago registrado. <b>Conéctala/instala la Zebra</b> para imprimir.', printAllowed ? 'ok' : 'bad');
   }else{
     setButtons(false, true);
     renderInfo('Error registrando pago', 'bad');
@@ -131,7 +143,7 @@ btnPay.addEventListener('click', async ()=>{
   busyPay = false;
 });
 
-// --- IMPRESIÓN ---
+// ====== IMPRESIÓN ======
 // Flujo seguro: 1) imprimir físicamente 2) si OK -> marcar en servidor
 btnPrint.addEventListener('click', async ()=>{
   if(!current || busyPrint) return;
@@ -179,7 +191,7 @@ btnPrint.addEventListener('click', async ()=>{
   busyPrint = false;
 });
 
-// --- Rutina de impresión física (reintentos + ZPL 5 líneas + QR con UUID) ---
+// ====== ZEBRA: impresión física (QR + 5 líneas, con reintentos) ======
 function printPhysical(att, maxRetry=5){
   const NOMBRE_COMPLETO = `${att.nombres ?? ''} ${att.apellidos ?? ''}`.trim();
   const INSTITUCION     = att.institucion ?? '';
@@ -227,7 +239,6 @@ function printPhysical(att, maxRetry=5){
 
   return new Promise((resolve, reject)=>{
     let attempts = 0;
-
     function tryOnce(){
       attempts++;
       window.BrowserPrint.getDefaultDevice('printer', function(printer){
@@ -253,7 +264,6 @@ function printPhysical(att, maxRetry=5){
         setTimeout(tryOnce, 1200);
       });
     }
-
     tryOnce();
   });
 }
@@ -263,7 +273,7 @@ function escapeZPL(s){
   return String(s).replace(/[\^~\\]/g, ' ');
 }
 
-// --- Alta nueva (solo sede) ---
+// ====== Alta nueva (solo sede) ======
 document.getElementById('btnAlta').addEventListener('click', async ()=>{
   const dni         = document.getElementById('dni').value.trim();
   const nombres     = document.getElementById('nombres').value.trim();
