@@ -56,10 +56,12 @@ async function fetchJSON(url, opt = {}, timeoutMs = 8000){
 function escapeZPL(s){ return String(s).replace(/[\^~\\]/g, ' '); }
 
 function clearResults(){
+  if (!elResults) return;
   elResults.innerHTML = '';
   elResults.classList.add('is-hidden');
 }
 function showResults(items){
+  if (!elResults) return;
   elResults.innerHTML = '';
   if (!items || !items.length){ clearResults(); return; }
   const frag = document.createDocumentFragment();
@@ -68,11 +70,10 @@ function showResults(items){
     row.className = 'result-item';
     const nombre = `${it.nombres ?? ''} ${it.apellidos ?? ''}`.trim();
     const linea1 = nombre || '(Sin nombre)';
-    const sub = []
+    const sub = [];
     if (it.dni) sub.push(`DNI: ${it.dni}`);
     if (it.correo) sub.push(it.correo);
     if (it.institucion) sub.push(it.institucion);
-    // contenido
     row.innerHTML = `
       <div class="ri-main">${linea1}</div>
       <div class="ri-sub">${sub.join(' · ')}</div>
@@ -119,21 +120,21 @@ async function loadAttendeeByUUID(uuid){
 
 async function selectCandidate(item){
   clearResults();
-  elScan.value = item.uuid || '';
+  if (elScan) elScan.value = item.uuid || '';
   renderInfo('Cargando…');
   await loadAttendeeByUUID(item.uuid);
-  elScan.focus();
+  elScan?.focus();
 }
 
 // ====== BUSCAR ======
 async function doSearch(){
   if (busyScan) return;
-  const mode = (elSearchBy.value || 'uuid').toLowerCase();
-  const q    = elScan.value.trim();
+  const mode = (elSearchBy?.value || 'uuid').toLowerCase();
+  const q    = (elScan?.value || '').trim();
   if(!q) return;
 
   busyScan = true;
-  elScan.disabled = true;
+  if (elScan) elScan.disabled = true;
   setButtons(true, true);
   clearResults();
   renderInfo('Buscando…');
@@ -147,7 +148,7 @@ async function doSearch(){
       current = null;
       setButtons(true, true);
     }
-    elScan.disabled = false;
+    if (elScan) elScan.disabled = false;
     busyScan = false;
     return;
   }
@@ -159,7 +160,7 @@ async function doSearch(){
   if(!res.success){
     const msg = res.status===404 ? 'Servidor sin endpoint /api/search' : (res.message || 'Error de búsqueda');
     renderInfo(`No se pudo buscar (${msg}).`, 'bad');
-    elScan.disabled = false;
+    if (elScan) elScan.disabled = false;
     busyScan = false;
     return;
   }
@@ -172,7 +173,6 @@ async function doSearch(){
   } else if (list.length === 1){
     await selectCandidate(list[0]);
   } else {
-    // Limitar y mostrar
     if (list.length > 20){
       renderInfo(`Demasiados resultados (${list.length}). Afina la búsqueda.`, 'bad');
       showResults(list.slice(0, 20));
@@ -182,19 +182,19 @@ async function doSearch(){
     }
   }
 
-  elScan.disabled = false;
+  if (elScan) elScan.disabled = false;
   busyScan = false;
 }
 
 // ====== EVENTO ENTER ======
-elScan.addEventListener('keydown', async (e)=>{
+elScan?.addEventListener('keydown', async (e)=>{
   if(e.key !== 'Enter') return;
   if(e.repeat) return;
   await doSearch();
 });
 
 // ====== PAGO ======
-btnPay.addEventListener('click', async ()=>{
+btnPay?.addEventListener('click', async ()=>{
   if(!current || busyPay) return;
   busyPay = true;
 
@@ -224,7 +224,7 @@ btnPay.addEventListener('click', async ()=>{
 });
 
 // ====== IMPRESIÓN ======
-btnPrint.addEventListener('click', async ()=>{
+btnPrint?.addEventListener('click', async ()=>{
   if(!current || busyPrint) return;
 
   if((current.estado_pago || 'NO_PAGADO') !== 'PAGADO'){
@@ -268,49 +268,58 @@ btnPrint.addEventListener('click', async ()=>{
   busyPrint = false;
 });
 
-// ====== ZPL (QR + 5 líneas, vertical) ======
-function printPhysical(att, maxRetry=5){
-  const NOMBRE_COMPLETO = `${att.nombres ?? ''} ${att.apellidos ?? ''}`.trim();
-  const INSTITUCION     = att.institucion ?? '';
-  const PROFESION       = (att.profesion ?? att.puesto ?? '');
-  const PAIS            = att.pais ?? '';
-  const CORREO          = (att.correo ?? '').slice(0, 36);
-  const UUID            = att.uuid || '';
+// ====== ZEBRA: impresión física (HORIZONTAL) ======
+// Solo: NOMBRE, APELLIDOS, PAÍS + QR (sin correo). QR a la izquierda, texto a la derecha.
+// Tamaños adaptativos y saneo de caracteres para evitar símbolos raros.
+function printPhysical(att, maxRetry = 5){
+  // Normaliza/ASCII
+  const ascii = s => String(s || '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')  // quita acentos
+    .replace(/[^\x20-\x7E]/g, '');                    // ASCII seguro
+
+  const NOMBRE    = ascii((att.nombres   || '').trim()).toUpperCase();
+  const APELLIDOS = ascii((att.apellidos || '').trim()).toUpperCase();
+  const PAIS      = ascii((att.pais      || '').trim()).toUpperCase();
+  const UUID      = String(att.uuid || '');
+
+  // Ajuste simple de tamaño por longitud (1 línea)
+  const sizeName    = (NOMBRE.length    > 20) ? 90 : 110;
+  const sizeLast    = (APELLIDOS.length > 20) ? 90 : 110;
+  const sizeCountry = (PAIS.length      > 18) ? 60 : 70;
+
+  const cut = (s, max) => (s.length > max ? s.slice(0, max) : s);
+  const L1 = cut(NOMBRE,    28);
+  const L2 = cut(APELLIDOS, 28);
+  const L3 = cut(PAIS,      24);
 
   const zpl = `
 ^XA
+^CI28
 ^PW800
-^LL600
+^LL400
+^LS0
 ^LH0,0
 
-^FO40,40
-^BQN,2,6
+^FX ---- QR grande a la izquierda ----
+^FO40,60
+^BQN,2,8
 ^FDLA,${escapeZPL(UUID)}^FS
 
-^FO40,250
-^A0R,70,70
-^FB700,2,10,C,0
-^FD${escapeZPL(INSTITUCION)}\\&^FS
+^FX ---- Texto a la derecha: Nombre, Apellidos, País ----
+^FO280,40
+^A0N,${sizeName},${sizeName}
+^FB500,1,0,L,0
+^FD${escapeZPL(L1)}^FS
 
-^FO160,250
-^A0R,70,70
-^FB700,2,10,C,0
-^FD${escapeZPL(PROFESION)}\\&^FS
+^FO280,160
+^A0N,${sizeLast},${sizeLast}
+^FB500,1,0,L,0
+^FD${escapeZPL(L2)}^FS
 
-^FO280,250
-^A0R,70,70
-^FB700,2,10,C,0
-^FD${escapeZPL(PAIS)}\\&^FS
-
-^FO400,250
-^A0R,60,60
-^FB700,2,10,C,0
-^FD${escapeZPL(CORREO)}\\&^FS
-
-^FO520,250
-^A0R,110,110
-^FB700,2,10,C,0
-^FD${escapeZPL(NOMBRE_COMPLETO)}\\&^FS
+^FO280,280
+^A0N,${sizeCountry},${sizeCountry}
+^FB500,1,0,L,0
+^FD${escapeZPL(L3)}^FS
 
 ^XZ`;
 
@@ -324,13 +333,19 @@ function printPhysical(att, maxRetry=5){
           renderInfo('No se encontró impresora. Reintentando...', 'bad');
           return setTimeout(tryOnce, 1200);
         }
-        printer.send(zpl, function(){ resolve(); }, function(err){
-          if(attempts >= maxRetry) return reject(new Error('Error impresión Zebra: '+(err||'desconocido')));
+        printer.send(zpl, function(){
+          resolve();
+        }, function(err){
+          if(attempts >= maxRetry){
+            return reject(new Error('Error impresión Zebra: ' + (err || 'desconocido')));
+          }
           renderInfo('Error impresión, reintentando...', 'bad');
           setTimeout(tryOnce, 1500);
         });
       }, function(err){
-        if(attempts >= maxRetry) return reject(new Error('Impresora no disponible: '+(err||'desconocido')));
+        if(attempts >= maxRetry){
+          return reject(new Error('Impresora no disponible: ' + (err || 'desconocido')));
+        }
         renderInfo('Impresora no disponible, reintentando...', 'bad');
         setTimeout(tryOnce, 1200);
       });
