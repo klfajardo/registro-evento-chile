@@ -1,21 +1,19 @@
-// /public/js/settings.js  (AUTO-INYECTA UI + PARCHEA FETCH) — una sola vez
+// /public/js/settings.js — versión simple (ROL, SEDE, SESSION_ID)
 (function(){
-  if (window.__CFG_BOOTSTRAPPED) return; // idempotencia
+  if (window.__CFG_BOOTSTRAPPED) return;
   window.__CFG_BOOTSTRAPPED = true;
 
   const DEFAULT_CFG = {
-    ROL: 'staff',
-    SEDE: 'sede',
-    SESSION_ID: '',
-    API_BASE: '',
-    ADMIN_TOKEN: ''
+    ROL: 'staff',        // 'admin' | 'cajero' | 'staff'
+    SEDE: 'sede',        // 'sede' | 'sala-1' | etc
+    SESSION_ID: ''       // ej. 'charla_gallito_1'
   };
 
   const safeJSON = (s)=>{ try { return JSON.parse(s); } catch(_) { return null; } };
   const readLS   = ()=> safeJSON(localStorage.getItem('slp_cfg')) || {};
   const fromURL  = ()=>{
     const p = new URLSearchParams(location.search);
-    const keys = ['ROL','SEDE','SESSION_ID','API_BASE','ADMIN_TOKEN'];
+    const keys = ['ROL','SEDE','SESSION_ID'];
     const out = {};
     for (const k of keys){
       const v = p.get(k) || p.get(k.toLowerCase());
@@ -24,9 +22,11 @@
     return out;
   };
 
-  // Usa window.CFG si ya lo definiste inline; si no, construye uno
-  const CFG = window.CFG ? Object.assign({}, DEFAULT_CFG, window.CFG, readLS(), fromURL())
-                         : Object.assign({}, DEFAULT_CFG, readLS(), fromURL());
+  // Construye CFG (respeta window.CFG si ya existe)
+  const CFG = window.CFG
+    ? Object.assign({}, DEFAULT_CFG, window.CFG, readLS(), fromURL())
+    : Object.assign({}, DEFAULT_CFG, readLS(), fromURL());
+
   localStorage.setItem('slp_cfg', JSON.stringify(CFG));
   window.CFG = CFG;
 
@@ -47,38 +47,14 @@
     paintMeta();
   };
 
-  // PARCHEA fetch() para prefijar API_BASE en rutas /api/...
-  (function patchFetch(){
-    if (!CFG.API_BASE) return;
-    try{
-      const abs = (u)=> /^https?:\/\//i.test(u);
-      const join = (base, path)=>{
-        const b = base.endsWith('/') ? base.slice(0,-1) : base;
-        const p = path.startsWith('/') ? path : ('/' + path);
-        return b + p;
-      };
-      const _fetch = window.fetch.bind(window);
-      window.fetch = function(resource, init){
-        try{
-          if (typeof resource === 'string' && resource.startsWith('/api/')){
-            resource = join(CFG.API_BASE, resource);
-          } else if (resource && resource.url && !abs(resource.url) && String(resource.url).startsWith('/api/')) {
-            resource = new Request(join(CFG.API_BASE, resource.url), resource);
-          }
-        }catch(_){}
-        return _fetch(resource, init);
-      };
-    }catch(_){}
-  })();
-
-  // AUTO-UI: si NO existe botón/modal, los inyecta
+  // AUTO-UI: si no existe botón/modal, los inyecta
   document.addEventListener('DOMContentLoaded', ()=>{
     let btnOpen  = document.getElementById('btnSettings');
     let modal    = document.getElementById('settingsModal');
     let form     = document.getElementById('settingsForm');
 
     if (!btnOpen || !modal || !form){
-      // Inyectar estilos mínimos del modal
+      // Estilos mínimos del modal
       const style = document.createElement('style');
       style.textContent = `
         #settingsModal.is-hidden{display:none!important}
@@ -86,7 +62,7 @@
       `;
       document.head.appendChild(style);
 
-      // Insertar botón al final del primer <nav> del header, o flotar si no hay nav
+      // Insertar botón en primer <nav> del header o flotar si no hay
       const header = document.querySelector('header .container') || document.body;
       let nav = header.querySelector('nav');
       if (!nav){
@@ -120,26 +96,18 @@
             </label>
             <label>
               <div class="subtle" style="margin-bottom:6px">Sede / Ubicación</div>
-              <input id="cfgSede" class="input" placeholder="ej: sede, sala-1, recepción" />
+              <input id="cfgSede" class="input" placeholder="ej: sede" />
             </label>
             <label>
-              <div class="subtle" style="margin-bottom:6px">SESSION_ID (solo charlas)</div>
+              <div class="subtle" style="margin-bottom:6px">SESSION_ID (Charla)</div>
               <input id="cfgSession" class="input" placeholder="ej: charla_gallito_1" />
-            </label>
-            <label>
-              <div class="subtle" style="margin-bottom:6px">API_BASE (opcional)</div>
-              <input id="cfgApiBase" class="input" placeholder="https://tu-api" />
-            </label>
-            <label>
-              <div class="subtle" style="margin-bottom:6px">ADMIN_TOKEN (opcional /api/import)</div>
-              <input id="cfgAdminToken" class="input" placeholder="token admin" />
             </label>
             <div class="actions" style="grid-template-columns:1fr 1fr; margin-top:12px">
               <button type="button" id="btnCloseSettings" class="btn secondary">Cancelar</button>
               <button type="submit" class="btn">Guardar</button>
             </div>
             <div class="actions" style="grid-template-columns:1fr; margin-top:8px">
-              <button type="button" id="btnResetSettings" class="btn accent">Resetear (limpiar este dispositivo)</button>
+              <button type="button" id="btnResetSettings" class="btn accent">Resetear (limpiar settings de este dispositivo)</button>
             </div>
           </form>
         </div>`;
@@ -153,11 +121,9 @@
     const $ = (id)=> form.querySelector('#'+id);
 
     const fill = ()=>{
-      if ($('cfgRol'))        $('cfgRol').value        = CFG.ROL;
-      if ($('cfgSede'))       $('cfgSede').value       = CFG.SEDE;
-      if ($('cfgSession'))    $('cfgSession').value    = CFG.SESSION_ID || '';
-      if ($('cfgApiBase'))    $('cfgApiBase').value    = CFG.API_BASE || '';
-      if ($('cfgAdminToken')) $('cfgAdminToken').value = CFG.ADMIN_TOKEN || '';
+      if ($('cfgRol'))     $('cfgRol').value     = CFG.ROL;
+      if ($('cfgSede'))    $('cfgSede').value    = CFG.SEDE;
+      if ($('cfgSession')) $('cfgSession').value = CFG.SESSION_ID || '';
     };
 
     btnOpen.addEventListener('click', (e)=>{ e.preventDefault(); fill(); modal.classList.remove('is-hidden'); });
@@ -169,15 +135,9 @@
       window.saveCFG({
         ROL: $('cfgRol')?.value?.trim() || 'staff',
         SEDE: $('cfgSede')?.value?.trim() || 'sede',
-        SESSION_ID: $('cfgSession')?.value?.trim() || '',
-        API_BASE: $('cfgApiBase')?.value?.trim() || '',
-        ADMIN_TOKEN: $('cfgAdminToken')?.value?.trim() || ''
+        SESSION_ID: $('cfgSession')?.value?.trim() || ''
       });
       modal.classList.add('is-hidden');
-      // Si cambiaste API_BASE, mejor refrescar para re-parchear fetch con el nuevo valor:
-      if ($('cfgApiBase') && $('cfgApiBase').value.trim() !== CFG.API_BASE){
-        location.reload();
-      }
     });
 
     btnReset?.addEventListener('click', ()=>{
