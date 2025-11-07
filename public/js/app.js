@@ -1,26 +1,18 @@
-// app.js — usa window.CFG en lugar de /config.json
+// app.js — INDEX (Registro). Búsqueda por UUID/DNI/Correo/Nombre+Apellido con lista de resultados.
+// Requiere endpoint GET /api/search?by=(uuid|dni|correo|nombre)&q=... que devuelva:
+// { success:true, results:[ { uuid, nombres, apellidos, dni, correo, institucion, puesto, pais, estado_pago, se_imprimio_at } ] }
 
-// ====== CONFIG (inyectada por settings.js) ======
 const CFG = window.CFG || { ROL: 'staff', SEDE: 'sede' };
 
-// Base opcional para apuntar a otra API (deja vacío para usar mismo host)
-const API_BASE = (CFG.API_BASE || '').replace(/\/+$/, '');
-const withBase = (path) => (API_BASE ? (API_BASE + path) : path);
-
-// Si definiste ADMIN_TOKEN en Ajustes, lo mandamos en los fetch
-function addAdminHeader(hdrs = {}) {
-  const out = { ...hdrs };
-  if (CFG.ADMIN_TOKEN) out['x-admin-token'] = CFG.ADMIN_TOKEN;
-  return out;
-}
-
 // ====== ELEMENTOS ======
-const elScan   = document.getElementById('scan');
-const elInfo   = document.getElementById('info');
-const btnPay   = document.getElementById('btnPay');
-const btnPrint = document.getElementById('btnPrint');
+const elSearchBy = document.getElementById('searchBy');
+const elScan     = document.getElementById('scan');
+const elResults  = document.getElementById('results');
+const elInfo     = document.getElementById('info');
+const btnPay     = document.getElementById('btnPay');
+const btnPrint   = document.getElementById('btnPrint');
 
-// Pintar meta si existe (settings.js ya suele hacerlo, esto es por si acaso)
+// Pintar meta si existe
 const meta = document.getElementById('meta');
 if (meta) {
   const bits = [`ROL: ${CFG.ROL}`, `SEDE: ${CFG.SEDE}`];
@@ -28,24 +20,29 @@ if (meta) {
   meta.textContent = bits.join(' | ');
 }
 
-// Estado
-let current  = null;   // { uuid, nombres, apellidos, institucion, puesto|profesion, estado_pago, se_imprimio_at, correo, pais }
-let busyScan = false;
-let busyPay  = false;
-let busyPrint= false;
+// ====== ESTADO ======
+let current   = null;   // Attendee cargado
+let busyScan  = false;
+let busyPay   = false;
+let busyPrint = false;
 
-// ====== HELPERS UI/NET ======
-function renderInfo(msg, cls=''){ elInfo.className = 'info ' + (cls||''); elInfo.innerHTML = msg; }
-function setButtons(payDisabled, printDisabled){ btnPay.disabled = payDisabled; btnPrint.disabled = printDisabled; }
-function canUsePrinter(){ return !!(window.BrowserPrint && typeof window.BrowserPrint.getDefaultDevice === 'function'); }
-
-// fetch con timeout + API_BASE + admin header
+// ====== HELPERS ======
+function renderInfo(msg, cls=''){
+  elInfo.className = 'info ' + (cls||'');
+  elInfo.innerHTML = msg;
+}
+function setButtons(payDisabled, printDisabled){
+  btnPay.disabled   = payDisabled;
+  btnPrint.disabled = printDisabled;
+}
+function canUsePrinter(){
+  return !!(window.BrowserPrint && typeof window.BrowserPrint.getDefaultDevice === 'function');
+}
 async function fetchJSON(url, opt = {}, timeoutMs = 8000){
-  const full = url.startsWith('http') ? url : withBase(url);
   const ctrl = new AbortController();
   const id = setTimeout(()=>ctrl.abort(new Error('timeout')), timeoutMs);
   try {
-    const r = await fetch(full, { ...opt, headers: addAdminHeader(opt.headers || {}), signal: ctrl.signal, cache:'no-store' });
+    const r = await fetch(url, { ...opt, signal: ctrl.signal, cache: 'no-store' });
     if (!r.ok) return { success:false, status:r.status, message:`HTTP ${r.status}` };
     const ct = r.headers.get('content-type') || '';
     if (!ct.includes('application/json')) return { success:false, message:'Respuesta no-JSON' };
@@ -56,49 +53,51 @@ async function fetchJSON(url, opt = {}, timeoutMs = 8000){
     clearTimeout(id);
   }
 }
+function escapeZPL(s){ return String(s).replace(/[\^~\\]/g, ' '); }
 
-// ====== ESCANEO (Enter) ======
-elScan.addEventListener('keydown', async (e)=>{
-  if(e.key !== 'Enter') return;
-  if(e.repeat) return;   // evita “Enter sostenido”
-  if(busyScan) return;
+function clearResults(){
+  elResults.innerHTML = '';
+  elResults.classList.add('is-hidden');
+}
+function showResults(items){
+  elResults.innerHTML = '';
+  if (!items || !items.length){ clearResults(); return; }
+  const frag = document.createDocumentFragment();
+  items.forEach((it)=>{
+    const row = document.createElement('div');
+    row.className = 'result-item';
+    const nombre = `${it.nombres ?? ''} ${it.apellidos ?? ''}`.trim();
+    const linea1 = nombre || '(Sin nombre)';
+    const sub = []
+    if (it.dni) sub.push(`DNI: ${it.dni}`);
+    if (it.correo) sub.push(it.correo);
+    if (it.institucion) sub.push(it.institucion);
+    // contenido
+    row.innerHTML = `
+      <div class="ri-main">${linea1}</div>
+      <div class="ri-sub">${sub.join(' · ')}</div>
+    `;
+    row.addEventListener('click', ()=> selectCandidate(it));
+    frag.appendChild(row);
+  });
+  elResults.appendChild(frag);
+  elResults.classList.remove('is-hidden');
+}
 
-  const uuid = elScan.value.trim();
-  if(!uuid) return;
-
-  busyScan = true;
-  elScan.disabled = true;
-  setButtons(true, true);
-  renderInfo('Buscando…');
-
-  // Asegura pintar antes del fetch
-  await new Promise(r=>requestAnimationFrame(r));
-
-  const data = await fetchJSON('/api/attendee/'+encodeURIComponent(uuid));
-
-  if(!data.success){
-    renderInfo('<b>No encontrado</b>', 'bad');
-    current = null;
-    setButtons(true, true);
-    elScan.disabled = false;
-    busyScan = false;
-    return;
-  }
-
-  current = data.attendee;
-  const estado = current.estado_pago || 'NO_PAGADO';
-  const nombreCompleto = `${current.nombres ?? ''} ${current.apellidos ?? ''}`.trim();
-  const institucion = current.institucion ?? '';
-  const profesion   = (current.profesion ?? current.puesto ?? '');
-  const correo      = current.correo ?? '';
-  const pais        = current.pais ?? '';
+function paintAttendee(att){
+  const estado = att.estado_pago || 'NO_PAGADO';
+  const nombreCompleto = `${att.nombres ?? ''} ${att.apellidos ?? ''}`.trim();
+  const institucion = att.institucion ?? '';
+  const profesion   = (att.profesion ?? att.puesto ?? '');
+  const correo      = att.correo ?? '';
+  const pais        = att.pais ?? '';
 
   renderInfo(`
     <div><b>${nombreCompleto}</b></div>
     <div>${institucion} — ${profesion}</div>
     <div>${pais ? ('<span class="subtle">País: '+pais+'</span>') : ''} ${correo ? ('<span class="subtle"> · Correo: '+correo+'</span>') : ''}</div>
     <div>Estado pago: <span class="badge ${estado==='PAGADO'?'ok':'bad'}"><span class="dot"></span>${estado}</span></div>
-    <div>Impreso: ${current.se_imprimio_at ? 'SI' : 'NO'}</div>
+    <div>Impreso: ${att.se_imprimio_at ? 'SI' : 'NO'}</div>
   `);
 
   const payAllowed   = CFG.SEDE === 'sede' && (CFG.ROL === 'admin' || CFG.ROL === 'cajero') && estado !== 'PAGADO';
@@ -108,12 +107,93 @@ elScan.addEventListener('keydown', async (e)=>{
   if(estado === 'PAGADO' && !canUsePrinter()){
     renderInfo('Pago OK. <b>No hay impresora Zebra disponible</b>. Conéctala/instala BrowserPrint para habilitar impresión.', 'bad');
   }
+}
+
+async function loadAttendeeByUUID(uuid){
+  const data = await fetchJSON('/api/attendee/'+encodeURIComponent(uuid));
+  if(!data.success) return { ok:false, reason:data.message || 'NO_ENCONTRADO' };
+  current = data.attendee;
+  paintAttendee(current);
+  return { ok:true };
+}
+
+async function selectCandidate(item){
+  clearResults();
+  elScan.value = item.uuid || '';
+  renderInfo('Cargando…');
+  await loadAttendeeByUUID(item.uuid);
+  elScan.focus();
+}
+
+// ====== BUSCAR ======
+async function doSearch(){
+  if (busyScan) return;
+  const mode = (elSearchBy.value || 'uuid').toLowerCase();
+  const q    = elScan.value.trim();
+  if(!q) return;
+
+  busyScan = true;
+  elScan.disabled = true;
+  setButtons(true, true);
+  clearResults();
+  renderInfo('Buscando…');
+
+  await new Promise(r=>requestAnimationFrame(r));
+
+  if (mode === 'uuid'){
+    const r = await loadAttendeeByUUID(q);
+    if (!r.ok){
+      renderInfo('<b>No encontrado</b>', 'bad');
+      current = null;
+      setButtons(true, true);
+    }
+    elScan.disabled = false;
+    busyScan = false;
+    return;
+  }
+
+  // nombre/dni/correo → lista
+  const byParam = (mode === 'nombre') ? 'nombre' : mode; // nombre concat nombres+apellidos en backend
+  const res = await fetchJSON(`/api/search?by=${encodeURIComponent(byParam)}&q=${encodeURIComponent(q)}`);
+
+  if(!res.success){
+    const msg = res.status===404 ? 'Servidor sin endpoint /api/search' : (res.message || 'Error de búsqueda');
+    renderInfo(`No se pudo buscar (${msg}).`, 'bad');
+    elScan.disabled = false;
+    busyScan = false;
+    return;
+  }
+
+  const list = Array.isArray(res.results) ? res.results : [];
+  if (list.length === 0){
+    renderInfo('<b>No encontrado</b>', 'bad');
+    current = null;
+    setButtons(true, true);
+  } else if (list.length === 1){
+    await selectCandidate(list[0]);
+  } else {
+    // Limitar y mostrar
+    if (list.length > 20){
+      renderInfo(`Demasiados resultados (${list.length}). Afina la búsqueda.`, 'bad');
+      showResults(list.slice(0, 20));
+    } else {
+      renderInfo('Selecciona un asistente de la lista:');
+      showResults(list);
+    }
+  }
 
   elScan.disabled = false;
   busyScan = false;
+}
+
+// ====== EVENTO ENTER ======
+elScan.addEventListener('keydown', async (e)=>{
+  if(e.key !== 'Enter') return;
+  if(e.repeat) return;
+  await doSearch();
 });
 
-// ====== PAGO (solo sede) ======
+// ====== PAGO ======
 btnPay.addEventListener('click', async ()=>{
   if(!current || busyPay) return;
   busyPay = true;
@@ -134,7 +214,7 @@ btnPay.addEventListener('click', async ()=>{
     current.estado_pago = 'PAGADO';
     const printAllowed = canUsePrinter();
     setButtons(true, !printAllowed);
-    renderInfo(printAllowed ? 'Pago registrado. Puedes imprimir.' : 'Pago registrado. <b>Conéctala/instala la Zebra</b> para imprimir.', printAllowed ? 'ok' : 'bad');
+    renderInfo(printAllowed ? 'Pago registrado. Puedes imprimir.' : 'Pago registrado. <b>Conecta/instala la Zebra</b> para imprimir.', printAllowed ? 'ok' : 'bad');
   }else{
     setButtons(false, true);
     renderInfo('Error registrando pago', 'bad');
@@ -144,7 +224,6 @@ btnPay.addEventListener('click', async ()=>{
 });
 
 // ====== IMPRESIÓN ======
-// Flujo seguro: 1) imprimir físicamente 2) si OK -> marcar en servidor
 btnPrint.addEventListener('click', async ()=>{
   if(!current || busyPrint) return;
 
@@ -163,17 +242,15 @@ btnPrint.addEventListener('click', async ()=>{
   btnPrint.disabled = true;
   renderInfo('Imprimiendo…');
 
-  // 1) Intento Zebra
   try{
-    await printPhysical(current); // lanza si falla
+    await printPhysical(current);
   }catch(e){
     renderInfo('Fallo de impresión. No se marcó como impreso. '+(e?.message||''), 'bad');
-    btnPrint.disabled = false; // permitir reintento
+    btnPrint.disabled = false;
     busyPrint = false;
     return;
   }
 
-  // 2) Marcado en backend
   const mark = await fetchJSON('/api/print', {
     method:'POST',
     headers:{'Content-Type':'application/json'},
@@ -185,19 +262,19 @@ btnPrint.addEventListener('click', async ()=>{
     renderInfo('Impresión OK y registrada en servidor.', 'ok');
   }else{
     renderInfo('La Zebra imprimió, pero el servidor NO marcó como impreso. Reintenta marcar o avisa al admin.', 'bad');
-    btnPrint.disabled = false; // permitir reintento de marcado
+    btnPrint.disabled = false;
   }
 
   busyPrint = false;
 });
 
-// ====== ZEBRA: impresión física (QR + 5 líneas, con reintentos) ======
+// ====== ZPL (QR + 5 líneas, vertical) ======
 function printPhysical(att, maxRetry=5){
   const NOMBRE_COMPLETO = `${att.nombres ?? ''} ${att.apellidos ?? ''}`.trim();
   const INSTITUCION     = att.institucion ?? '';
   const PROFESION       = (att.profesion ?? att.puesto ?? '');
   const PAIS            = att.pais ?? '';
-  const CORREO          = (att.correo ?? '').slice(0, 36); // evita desborde
+  const CORREO          = (att.correo ?? '').slice(0, 36);
   const UUID            = att.uuid || '';
 
   const zpl = `
@@ -247,19 +324,13 @@ function printPhysical(att, maxRetry=5){
           renderInfo('No se encontró impresora. Reintentando...', 'bad');
           return setTimeout(tryOnce, 1200);
         }
-        printer.send(zpl, function(){
-          resolve(); // éxito real de Zebra
-        }, function(err){
-          if(attempts >= maxRetry){
-            return reject(new Error('Error impresión Zebra: '+(err||'desconocido')));
-          }
+        printer.send(zpl, function(){ resolve(); }, function(err){
+          if(attempts >= maxRetry) return reject(new Error('Error impresión Zebra: '+(err||'desconocido')));
           renderInfo('Error impresión, reintentando...', 'bad');
           setTimeout(tryOnce, 1500);
         });
       }, function(err){
-        if(attempts >= maxRetry){
-          return reject(new Error('Impresora no disponible: '+(err||'desconocido')));
-        }
+        if(attempts >= maxRetry) return reject(new Error('Impresora no disponible: '+(err||'desconocido')));
         renderInfo('Impresora no disponible, reintentando...', 'bad');
         setTimeout(tryOnce, 1200);
       });
@@ -267,38 +338,3 @@ function printPhysical(att, maxRetry=5){
     tryOnce();
   });
 }
-
-// Escapar caracteres que rompen ZPL
-function escapeZPL(s){
-  return String(s).replace(/[\^~\\]/g, ' ');
-}
-
-// ====== Alta nueva (solo sede) ======
-document.getElementById('btnAlta').addEventListener('click', async ()=>{
-  const dni         = document.getElementById('dni').value.trim();
-  const nombres     = document.getElementById('nombres').value.trim();
-  const apellidos   = document.getElementById('apellidos').value.trim();
-  const institucion = document.getElementById('institucion').value.trim();
-  const puesto      = document.getElementById('puesto').value.trim(); // seguimos usando 'puesto'
-  const correoEl    = document.getElementById('correo');
-  const paisEl      = document.getElementById('pais');
-  const correo      = (correoEl ? correoEl.value : '').trim();
-  const pais        = (paisEl ? paisEl.value : '').trim();
-
-  if(!dni || !nombres){ return alert('DNI y Nombres son obligatorios'); }
-  if(CFG.SEDE!=='sede'){ return alert('Alta nueva solo en sede'); }
-
-  const body = { dni, nombres, apellidos, institucion, puesto, correo, pais, sede_alta:'sede_principal' };
-
-  const res = await fetchJSON('/api/register', {
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body: JSON.stringify(body)
-  });
-
-  if(res.success){
-    alert('Alta creada. Escanea el QR una vez generado.');
-  } else {
-    alert('Error creando alta');
-  }
-});
