@@ -12,6 +12,16 @@ const elInfo     = document.getElementById('info');
 const btnPay     = document.getElementById('btnPay');
 const btnPrint   = document.getElementById('btnPrint');
 
+// --- campos de Alta ---
+const btnAlta       = document.getElementById('btnAlta');
+const fldDni        = document.getElementById('dni');
+const fldNombres    = document.getElementById('nombres');
+const fldApellidos  = document.getElementById('apellidos');
+const fldInstit     = document.getElementById('institucion');
+const fldPuesto     = document.getElementById('puesto');
+const fldCorreo     = document.getElementById('correo');
+const fldPais       = document.getElementById('pais');
+
 // Pintar meta si existe
 const meta = document.getElementById('meta');
 if (meta) {
@@ -25,6 +35,7 @@ let current   = null;   // Attendee cargado
 let busyScan  = false;
 let busyPay   = false;
 let busyPrint = false;
+let busyAlta  = false;
 
 // ====== HELPERS ======
 function renderInfo(msg, cls=''){
@@ -32,8 +43,8 @@ function renderInfo(msg, cls=''){
   elInfo.innerHTML = msg;
 }
 function setButtons(payDisabled, printDisabled){
-  btnPay.disabled   = payDisabled;
-  btnPrint.disabled = printDisabled;
+  if (btnPay)   btnPay.disabled   = payDisabled;
+  if (btnPrint) btnPrint.disabled = printDisabled;
 }
 function canUsePrinter(){
   return !!(window.BrowserPrint && typeof window.BrowserPrint.getDefaultDevice === 'function');
@@ -333,7 +344,7 @@ function printPhysical(att, maxRetry = 5){
       window.BrowserPrint.getDefaultDevice('printer', function(printer){
         if(!printer){
           if(attempts >= maxRetry) return reject(new Error('No se encontró impresora Zebra'));
-        renderInfo('No se encontró impresora. Reintentando...', 'bad');
+          renderInfo('No se encontró impresora. Reintentando...', 'bad');
           return setTimeout(tryOnce, 1200);
         }
         printer.send(zpl, function(){
@@ -356,3 +367,54 @@ function printPhysical(att, maxRetry = 5){
     tryOnce();
   });
 }
+
+// ====== ALTA NUEVA (solo sede principal) ======
+btnAlta?.addEventListener('click', async ()=>{
+  if (busyAlta) return;
+  const dni         = (fldDni?.value || '').trim();
+  const nombres     = (fldNombres?.value || '').trim();
+  const apellidos   = (fldApellidos?.value || '').trim();
+  const institucion = (fldInstit?.value || '').trim();
+  const puesto      = (fldPuesto?.value || '').trim();
+  const correo      = (fldCorreo?.value || '').trim();
+  const pais        = (fldPais?.value || '').trim();
+
+  if (!dni || !nombres){
+    alert('DNI y Nombres son obligatorios');
+    return;
+  }
+  if ((CFG.SEDE || '').toLowerCase() !== 'sede'){
+    alert('Alta nueva solo en SEDE principal');
+    return;
+  }
+
+  busyAlta = true;
+  btnAlta.disabled = true;
+  renderInfo('Creando alta…');
+
+  const res = await fetchJSON('/api/register', {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({
+      dni, nombres, apellidos, institucion, puesto, correo, pais, sede_alta:'sede_principal'
+    })
+  });
+
+  if (res.success){
+    renderInfo('Alta creada. Escanea el QR una vez generado.', 'ok');
+    // Limpieza rápida
+    fldDni && (fldDni.value = '');
+    fldNombres && (fldNombres.value = '');
+    fldApellidos && (fldApellidos.value = '');
+    fldInstit && (fldInstit.value = '');
+    fldPuesto && (fldPuesto.value = '');
+    fldCorreo && (fldCorreo.value = '');
+    fldPais && (fldPais.value = '');
+  } else {
+    renderInfo('Error creando alta' + (res.message ? `: ${res.message}` : ''), 'bad');
+    console.error('Alta error:', res);
+  }
+
+  btnAlta.disabled = false;
+  busyAlta = false;
+});
