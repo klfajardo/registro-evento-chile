@@ -1,4 +1,4 @@
-<!-- app.js -->
+
 <script>
 // app.js — INDEX (Registro). Búsqueda por UUID/DNI/Correo/Nombre+Apellido con lista de resultados.
 // Requiere endpoint GET /api/search?by=(uuid|dni|correo|nombre)&q=... que devuelva:
@@ -433,3 +433,4 @@ btnAlta?.addEventListener('click', async ()=>{
   busyAlta = false;
 });
 </script>
+
