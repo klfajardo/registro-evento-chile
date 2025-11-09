@@ -115,7 +115,7 @@ function paintAttendee(att) {
   const profesion   = (att.profesion ?? att.puesto ?? '');
   const correo      = att.correo ?? '';
   const pais        = att.pais ?? '';
-  const descripcion = att.`Gafete: ${it.descripcion}` ?? ''; // NUEVO
+  const descripcion = att.it.descripcion ?? ''; // NUEVO
 
   renderInfo(`
     <div><b>${nombreCompleto}</b></div>
@@ -452,6 +452,7 @@ btnAlta?.addEventListener('click', async () => {
   if (btnAlta) btnAlta.disabled = false;
   busyAlta = false;
 });
+
 
 
 
