@@ -392,7 +392,7 @@ function printPhysical(att, maxRetry = 5) {
         });
       }, (err) => {
         if (attempts >= maxRetry) {
-          return reject(new Error('Impresora no disponible: ' + (err || 'desconocido'));
+          return reject(new Error('Impresora no disponible: ' + (err || 'desconocido')));
         }
         renderInfo('Impresora no disponible, reintentando...', 'bad');
         setTimeout(tryOnce, 1200);
@@ -452,3 +452,4 @@ btnAlta?.addEventListener('click', async () => {
   if (btnAlta) btnAlta.disabled = false;
   busyAlta = false;
 });
+
