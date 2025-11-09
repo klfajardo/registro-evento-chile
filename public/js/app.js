@@ -120,7 +120,7 @@ function paintAttendee(att) {
   renderInfo(`
     <div><b>${nombreCompleto}</b></div>
     <div>${institucion} — ${profesion}</div>
-    ${descripcion ? `<div>${descripcion}</div>` : ''}
+    ${descripcion ? `<div>Gafete: ${descripcion}</div>` : ''}
     <div>${pais ? ('<span class="subtle">País: ' + pais + '</span>') : ''} ${correo ? ('<span class="subtle"> · Correo: ' + correo + '</span>') : ''}</div>
     <div>Estado pago: <span class="badge ${estado === 'PAGADO' ? 'ok' : 'bad'}"><span class="dot"></span>${estado}</span></div>
     <div>Impreso: ${att.se_imprimio_at ? 'SI' : 'NO'}</div>
@@ -452,6 +452,7 @@ btnAlta?.addEventListener('click', async () => {
   if (btnAlta) btnAlta.disabled = false;
   busyAlta = false;
 });
+
 
 
 
