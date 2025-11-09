@@ -298,7 +298,7 @@ btnPrint?.addEventListener('click', async () => {
   busyPrint = false;
 });
 
-// ====== ZEBRA: HORIZONTAL (layout probado) ======
+// ====== ZEBRA: HORIZONTAL (layout final) ======
 // Solo: NOMBRE + PRIMER APELLIDO + PAÍS + QR. Sin correo.
 // 59×102 mm @203dpi ≈ 800x600 dots (usamos ^PW800 ^LL600).
 // Offsets opcionales (dots):
@@ -323,21 +323,12 @@ function printPhysical(att, maxRetry = 5) {
   const L2 = cut(PRIMER_AP, 20); // Primer apellido
   const L3 = cut(PAIS,      18); // País
 
-  // Tamaños según longitud (manteniendo proporciones del template dado)
-  const sizeNameBase    = 110;
-  const sizeLastBase    = 110;
-  const sizeCountryBase = 70;
-
-  const sizeName    = (L1.length > 14) ? 90 : sizeNameBase;
-  const sizeLast    = (L2.length > 14) ? 90 : sizeLastBase;
-  const sizeCountry = (L3.length > 12) ? 60 : sizeCountryBase;
-
   // Offsets desde settings
   const off = (window.CFG && window.CFG.PRINT_OFFSET) || { x: 0, y: 0 };
   const LS  = Math.round(off.x || 0);
   const LT  = Math.round(off.y || 0);
 
-  // ZPL basado en el formato que ya te funcionó.
+  // Template final proporcionado (QR grande + texto rotado 90°, anclado lejos del QR)
   const zpl = `^XA
 ^CI28
 ^PON
@@ -348,24 +339,21 @@ function printPhysical(att, maxRetry = 5) {
 ^LH0,0
 
 ^FX ---- QR a la izquierda ----
-^FO100,100
-^BQN,2,7
+^FO230,175
+^BQN,2,10
 ^FDLA,${escapeZPL(QR_URL)}^FS
 
-^FX ---- Texto a la derecha (rotado 90°, bloque centrado) ----
-^FO260,400
-^A0R,${sizeCountry},${sizeCountry}
-^FB480,1,0,C,0
+^FX ---- Texto a la derecha (rotado 90°, anclado lejos del QR) ----
+^FO250,600
+^A0R,70,70
 ^FD${escapeZPL(L3)}^FS
 
-^FO360,400
-^A0R,${sizeLast},${sizeLast}
-^FB480,1,0,C,0
+^FO350,600
+^A0R,110,110
 ^FD${escapeZPL(L2)}^FS
 
-^FO500,400
-^A0R,${sizeName},${sizeName}
-^FB480,1,0,C,0
+^FO450,600
+^A0R,110,110
 ^FD${escapeZPL(L1)}^FS
 
 ^XZ`;
@@ -401,6 +389,7 @@ function printPhysical(att, maxRetry = 5) {
     tryOnce();
   });
 }
+
 
 // ====== ALTA NUEVA (solo sede principal) ======
 btnAlta?.addEventListener('click', async () => {
@@ -452,4 +441,5 @@ btnAlta?.addEventListener('click', async () => {
   if (btnAlta) btnAlta.disabled = false;
   busyAlta = false;
 });
+
 
