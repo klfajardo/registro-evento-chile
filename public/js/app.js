@@ -1,3 +1,5 @@
+<!-- app.js -->
+<script>
 // app.js — INDEX (Registro). Búsqueda por UUID/DNI/Correo/Nombre+Apellido con lista de resultados.
 // Requiere endpoint GET /api/search?by=(uuid|dni|correo|nombre)&q=... que devuelva:
 // { success:true, results:[ { uuid, nombres, apellidos, dni, correo, institucion, puesto, pais, estado_pago, se_imprimio_at } ] }
@@ -279,33 +281,37 @@ btnPrint?.addEventListener('click', async ()=>{
   busyPrint = false;
 });
 
-// ====== ZEBRA: impresión física (VERTICAL / PORTRAIT, simple y robusto) ======
-// Solo: NOMBRE, APELLIDOS, PAÍS + QR (sin correo).
-// QR codifica URL a charla.html con ?uuid=...&auto=1 para escaneo con celular.
-// Sin rotaciones de driver, fuentes ^A0N (no rotadas). Todo centrado con ^FB.
+// ====== ZEBRA: impresión física (VERTICAL / PORTRAIT) ======
+// Solo: PRIMER NOMBRE, PRIMER APELLIDO, PAÍS + QR (sin correo).
+// QR: URL a charla.html con ?uuid=...&auto=1
 // Dimensiones para pulsera 59×102 mm a 203 dpi: ^PW=472, ^LL=816.
 function printPhysical(att, maxRetry = 5){
   const sanitize = s => String(s||'')
     .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
     .replace(/[^\x20-\x7E]/g, '');
 
-  const NOMBRE    = sanitize((att.nombres   || '').trim()).toUpperCase();
-  const APELLIDOS = sanitize((att.apellidos || '').trim()).toUpperCase();
-  const PAIS      = sanitize((att.pais      || '').trim()).toUpperCase();
-  const UUID      = String(att.uuid || '');
+  // Primer nombre y primer apellido SOLAMENTE
+  const rawNombre   = (att.nombres   || '').trim();
+  const rawApellido = (att.apellidos || '').trim();
+
+  const firstName   = sanitize((rawNombre.split(/\s+/)[0] || '')).toUpperCase();
+  const firstLast   = sanitize((rawApellido.split(/\s+/)[0] || '')).toUpperCase();
+
+  const PAIS        = sanitize((att.pais || '').trim()).toUpperCase();
+  const UUID        = String(att.uuid || '');
 
   // URL para auto check-in en charla.html
   const QR_URL = `${location.origin}/charla.html?uuid=${encodeURIComponent(UUID)}&auto=1`;
 
   // Recortes duros para evitar overflow en 1 línea
   const cut = (s, n) => (s.length > n ? s.slice(0, n) : s);
-  const L1 = cut(NOMBRE,    22);   // ancho 59mm: una línea grande centrada
-  const L2 = cut(APELLIDOS, 22);
-  const L3 = cut(PAIS,      20);
+  const L1 = cut(firstName,  22);
+  const L2 = cut(firstLast,  22);
+  const L3 = cut(PAIS,       20);
 
-  // Tamaños adaptativos muy conservadores
-  const sizeName    = (L1.length > 16) ? 68 : 80;
-  const sizeLast    = (L2.length > 16) ? 68 : 80;
+  // Tamaños adaptativos conservadores (nombres más cortos → fuente más grande)
+  const sizeName    = (L1.length > 12) ? 76 : 86;
+  const sizeLast    = (L2.length > 12) ? 76 : 86;
   const sizeCountry = (L3.length > 14) ? 44 : 56;
 
   const zpl = `
@@ -317,19 +323,20 @@ function printPhysical(att, maxRetry = 5){
 ^LL816
 ^LS0
 ^LH0,0
+^PQ1
 
 ^FX ---- QR centrado arriba ----
 ^FO136,24
 ^BQN,2,7
 ^FDLA,${escapeZPL(QR_URL)}^FS
 
-^FX ---- Nombre (centrado) ----
+^FX ---- Primer Nombre (centrado) ----
 ^FO20,330
 ^A0N,${sizeName},${sizeName}
 ^FB432,1,0,C,0
 ^FD${escapeZPL(L1)}^FS
 
-^FX ---- Apellidos (centrado) ----
+^FX ---- Primer Apellido (centrado) ----
 ^FO20,420
 ^A0N,${sizeLast},${sizeLast}
 ^FB432,1,0,C,0
@@ -425,3 +432,4 @@ btnAlta?.addEventListener('click', async ()=>{
   btnAlta.disabled = false;
   busyAlta = false;
 });
+</script>
