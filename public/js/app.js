@@ -39,6 +39,7 @@ let busyAlta  = false;
 
 // ====== HELPERS ======
 function renderInfo(msg, cls=''){
+  if (!elInfo) return;
   elInfo.className = 'info ' + (cls||'');
   elInfo.innerHTML = msg;
 }
@@ -165,7 +166,7 @@ async function doSearch(){
   }
 
   // nombre/dni/correo → lista
-  const byParam = (mode === 'nombre') ? 'nombre' : mode; // nombre concat nombres+apellidos en backend
+  const byParam = (mode === 'nombre') ? 'nombre' : mode;
   const res = await fetchJSON(`/api/search?by=${encodeURIComponent(byParam)}&q=${encodeURIComponent(q)}`);
 
   if(!res.success){
@@ -279,72 +280,72 @@ btnPrint?.addEventListener('click', async ()=>{
   busyPrint = false;
 });
 
-// ====== ZEBRA: impresión física (VERTICAL / PORTRAIT) ======
-// Solo: PRIMER NOMBRE, PRIMER APELLIDO, PAÍS + QR (sin correo).
-// QR: URL a charla.html con ?uuid=...&auto=1
-// Dimensiones para pulsera 59×102 mm a 203 dpi: ^PW=472, ^LL=816.
+// ====== ZEBRA: HORIZONTAL (tipo Microsoft) ======
+// Solo: NOMBRE + PRIMER APELLIDO + PAÍS + QR. Sin correo.
+// 59×102 mm @203dpi ≈ 800x600 dots. Todo centrado en el “eje largo”.
+// Offsets opcionales (dots) para que el staff ajuste sin tocar código:
+//   window.CFG.PRINT_OFFSET = { x: 0, y: 0 }
 function printPhysical(att, maxRetry = 5){
   const sanitize = s => String(s||'')
     .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
     .replace(/[^\x20-\x7E]/g, '');
 
-  // Primer nombre y primer apellido SOLAMENTE
-  const rawNombre   = (att.nombres   || '').trim();
-  const rawApellido = (att.apellidos || '').trim();
-
-  const firstName   = sanitize((rawNombre.split(/\s+/)[0] || '')).toUpperCase();
-  const firstLast   = sanitize((rawApellido.split(/\s+/)[0] || '')).toUpperCase();
-
-  const PAIS        = sanitize((att.pais || '').trim()).toUpperCase();
+  const NOMBRE      = sanitize((att.nombres   || '').trim()).toUpperCase();
+  const APELLIDOS   = sanitize((att.apellidos || '').trim()).toUpperCase();
+  const PRIMER_AP   = APELLIDOS.split(/\s+/)[0] || '';   // << SOLO primer apellido
+  const PAIS        = sanitize((att.pais      || '').trim()).toUpperCase();
   const UUID        = String(att.uuid || '');
 
   // URL para auto check-in en charla.html
   const QR_URL = `${location.origin}/charla.html?uuid=${encodeURIComponent(UUID)}&auto=1`;
 
-  // Recortes duros para evitar overflow en 1 línea
+  // Cortes duros (una línea por campo)
   const cut = (s, n) => (s.length > n ? s.slice(0, n) : s);
-  const L1 = cut(firstName,  22);
-  const L2 = cut(firstLast,  22);
-  const L3 = cut(PAIS,       20);
+  const L1 = cut(NOMBRE,    20);
+  const L2 = cut(PRIMER_AP, 20);
+  const L3 = cut(PAIS,      18);
 
-  // Tamaños adaptativos conservadores (nombres más cortos → fuente más grande)
-  const sizeName    = (L1.length > 12) ? 76 : 86;
-  const sizeLast    = (L2.length > 12) ? 76 : 86;
-  const sizeCountry = (L3.length > 14) ? 44 : 56;
+  // Tamaños según longitud
+  const sizeName    = (L1.length > 14) ? 90 : 110;
+  const sizeLast    = (L2.length > 14) ? 90 : 110;
+  const sizeCountry = (L3.length > 12) ? 60 : 70;
 
+  // Offsets desde settings
+  const off = (window.CFG && window.CFG.PRINT_OFFSET) || { x:0, y:0 };
+  const LS  = Math.round(off.x || 0);    // shift horizontal
+  const LT  = Math.round(off.y || 0);    // shift vertical
+
+  // ZPL: QR a la izquierda; tres líneas a la derecha (texto rotado 90° con ^A0R)
   const zpl = `
 ^XA
 ^CI28
 ^PON
-^FWN
-^PW472
-^LL816
-^LS0
+^PW800
+^LL600
+^LS${LS}
+^LT${LT}
 ^LH0,0
-^PQ1
 
-^FX ---- QR centrado arriba ----
-^FO136,24
+^FX ---- QR a la izquierda ----
+^FO60,60
 ^BQN,2,7
 ^FDLA,${escapeZPL(QR_URL)}^FS
 
-^FX ---- Primer Nombre (centrado) ----
-^FO20,330
-^A0N,${sizeName},${sizeName}
-^FB432,1,0,C,0
-^FD${escapeZPL(L1)}^FS
+^FX ---- Texto a la derecha (centrado en bloque de 480 dots) ----
+^FO260,80
+^A0R,${sizeName},${sizeName}
+^FB480,1,0,C,0
+^FD${escapeZPL(L1)}\\&^FS
 
-^FX ---- Primer Apellido (centrado) ----
-^FO20,420
-^A0N,${sizeLast},${sizeLast}
-^FB432,1,0,C,0
-^FD${escapeZPL(L2)}^FS
+^FO380,80
+^A0R,${sizeLast},${sizeLast}
+^FB480,1,0,C,0
+^FD${escapeZPL(L2)}\\&^FS
 
-^FX ---- País (centrado) ----
-^FO20,510
-^A0N,${sizeCountry},${sizeCountry}
-^FB432,1,0,C,0
-^FD${escapeZPL(L3)}^FS
+^FO500,80
+^A0R,${sizeCountry},${sizeCountry}
+^FB480,1,0,C,0
+^FD${escapeZPL(L3)}\\&^FS
 
 ^XZ`;
 
@@ -401,7 +402,7 @@ btnAlta?.addEventListener('click', async ()=>{
   }
 
   busyAlta = true;
-  btnAlta.disabled = true;
+  if (btnAlta) btnAlta.disabled = true;
   renderInfo('Creando alta…');
 
   const res = await fetchJSON('/api/register', {
@@ -415,21 +416,18 @@ btnAlta?.addEventListener('click', async ()=>{
   if (res.success){
     renderInfo('Alta creada. Escanea el QR una vez generado.', 'ok');
     // Limpieza rápida
-    fldDni && (fldDni.value = '');
-    fldNombres && (fldNombres.value = '');
-    fldApellidos && (fldApellidos.value = '');
-    fldInstit && (fldInstit.value = '');
-    fldPuesto && (fldPuesto.value = '');
-    fldCorreo && (fldCorreo.value = '');
-    fldPais && (fldPais.value = '');
+    if (fldDni) fldDni.value = '';
+    if (fldNombres) fldNombres.value = '';
+    if (fldApellidos) fldApellidos.value = '';
+    if (fldInstit) fldInstit.value = '';
+    if (fldPuesto) fldPuesto.value = '';
+    if (fldCorreo) fldCorreo.value = '';
+    if (fldPais) fldPais.value = '';
   } else {
     renderInfo('Error creando alta' + (res.message ? `: ${res.message}` : ''), 'bad');
     console.error('Alta error:', res);
   }
 
-  btnAlta.disabled = false;
+  if (btnAlta) btnAlta.disabled = false;
   busyAlta = false;
 });
-
-
-
