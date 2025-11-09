@@ -49,7 +49,7 @@ app.get('/healthz', (_, res) => res.type('text').send('ok'));
 
 // ================== ENDPOINTS ==================
 
-// 1) Importar Excel maestro (dni, nombres, apellidos, institucion, puesto, correo?, pais?, estado_pago?)
+// 1) Importar Excel maestro
 const upload = multer({ dest: 'uploads/' });
 app.post('/api/import', requireAdminToken, upload.single('excel'), async (req, res) => {
   try {
@@ -78,6 +78,20 @@ app.post('/api/import', requireAdminToken, upload.single('excel'), async (req, r
       record.correo = record.correo || '';
       record.pais   = record.pais   || '';
 
+      // NUEVO: normalizar descripción desde posibles encabezados
+      record.descripcion = (
+        record.descripcion ||
+        record['descripción'] ||
+        record.description ||
+        record.detalle ||
+        record.detalles ||
+        record.nota ||
+        record.notas ||
+        record.observaciones ||
+        record.observacion ||
+        ''
+      ).toString().trim();
+
       await upsertAsistenteByDni(record); // upsert por DNI
       count++;
     }
@@ -95,9 +109,10 @@ app.post('/api/import', requireAdminToken, upload.single('excel'), async (req, r
 app.post('/api/register', async (req, res) => {
   const {
     dni, nombres, apellidos, institucion,
-    puesto,                  // usamos "puesto" (coincide con tu Airtable)
+    puesto,
     correo = '',
     pais   = '',
+    descripcion = '',
     estado_pago,
     sede_alta
   } = req.body || {};
@@ -115,6 +130,7 @@ app.post('/api/register', async (req, res) => {
       puesto: (puesto || '').trim(),
       correo: (correo || '').trim(),
       pais: (pais || '').trim(),
+      descripcion: (descripcion || '').trim(),
       uuid: uuidv4(),
       estado_pago: estado_pago || 'NO_PAGADO',
       sede_alta: sede_alta || 'sede_principal'
@@ -124,8 +140,8 @@ app.post('/api/register', async (req, res) => {
   } catch (err) {
     // Fallback CSV si Airtable falla
     try {
-      const headers = 'dni,nombres,apellidos,institucion,puesto,correo,pais,uuid,estado_pago,sede_alta\n';
-      const row = `"${dni}","${nombres}","${apellidos}","${institucion}","${puesto}","${correo}","${pais}","${uuidv4()}","NO_PAGADO","sede_principal"\n`;
+      const headers = 'dni,nombres,apellidos,institucion,puesto,correo,pais,descripcion,uuid,estado_pago,sede_alta\n';
+      const row = `"${dni}","${nombres}","${apellidos}","${institucion}","${puesto}","${correo}","${pais}","${(descripcion || '').replace(/"/g,'""')}","${uuidv4()}","NO_PAGADO","sede_principal"\n`;
       if (!fs.existsSync(FALLBACK_FILE)) fs.writeFileSync(FALLBACK_FILE, headers + row);
       else fs.appendFileSync(FALLBACK_FILE, row);
       return res.json({ success: true, message: 'Guardado local en respaldo.csv (offline)' });
@@ -170,6 +186,7 @@ app.get('/api/attendee/:uuid', async (req, res) => {
         puesto        : f.puesto,
         correo        : f.correo || '',
         pais          : f.pais   || '',
+        descripcion   : f.descripcion || '', // NUEVO
         estado_pago   : f.estado_pago || 'NO_PAGADO',
         se_imprimio_at: f.se_imprimio_at || null
       }
@@ -214,6 +231,7 @@ app.get('/api/search', async (req, res) => {
           puesto        : f.puesto || '',
           correo        : f.correo || '',
           pais          : f.pais || '',
+          descripcion   : f.descripcion || '', // NUEVO
           estado_pago   : f.estado_pago || 'NO_PAGADO',
           se_imprimio_at: f.se_imprimio_at || null
         });
@@ -225,7 +243,7 @@ app.get('/api/search', async (req, res) => {
     const rows = await listAll(process.env.AIRTABLE_TABLE_ASISTENTES, {
       fields: [
         'uuid','dni','nombres','apellidos','institucion','puesto',
-        'correo','pais','estado_pago','se_imprimio_at'
+        'correo','pais','descripcion','estado_pago','se_imprimio_at' // NUEVO descripcion
       ]
     });
 
@@ -255,6 +273,7 @@ app.get('/api/search', async (req, res) => {
           puesto        : f.puesto || '',
           correo        : f.correo || '',
           pais          : f.pais || '',
+          descripcion   : f.descripcion || '', // NUEVO
           estado_pago   : f.estado_pago || 'NO_PAGADO',
           se_imprimio_at: f.se_imprimio_at || null
         });
