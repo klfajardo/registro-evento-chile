@@ -1,6 +1,6 @@
 // app.js — INDEX (Registro). Búsqueda por UUID/DNI/Correo/Nombre+Apellido con lista de resultados.
 // Requiere endpoint GET /api/search?by=(uuid|dni|correo|nombre)&q=... que devuelva:
-// { success:true, results:[ { uuid, nombres, apellidos, dni, correo, institucion, puesto, pais, estado_pago, se_imprimio_at } ] }
+// { success:true, results:[ { uuid, nombres, apellidos, dni, correo, institucion, puesto, pais, descripcion, estado_pago, se_imprimio_at } ] }
 
 const CFG = window.CFG || { ROL: 'staff', SEDE: 'sede' };
 
@@ -96,6 +96,7 @@ function showResults(items) {
     if (it.dni) sub.push(`DNI: ${it.dni}`);
     if (it.correo) sub.push(it.correo);
     if (it.institucion) sub.push(it.institucion);
+    if (it.descripcion) sub.push(it.descripcion); // NUEVO: mostrar descripción en la lista
     row.innerHTML = `
       <div class="ri-main">${linea1}</div>
       <div class="ri-sub">${sub.join(' · ')}</div>
@@ -114,10 +115,12 @@ function paintAttendee(att) {
   const profesion   = (att.profesion ?? att.puesto ?? '');
   const correo      = att.correo ?? '';
   const pais        = att.pais ?? '';
+  const descripcion = att.descripcion ?? ''; // NUEVO
 
   renderInfo(`
     <div><b>${nombreCompleto}</b></div>
     <div>${institucion} — ${profesion}</div>
+    ${descripcion ? `<div>${descripcion}</div>` : ''}
     <div>${pais ? ('<span class="subtle">País: ' + pais + '</span>') : ''} ${correo ? ('<span class="subtle"> · Correo: ' + correo + '</span>') : ''}</div>
     <div>Estado pago: <span class="badge ${estado === 'PAGADO' ? 'ok' : 'bad'}"><span class="dot"></span>${estado}</span></div>
     <div>Impreso: ${att.se_imprimio_at ? 'SI' : 'NO'}</div>
@@ -334,10 +337,7 @@ function printPhysical(att, maxRetry = 5) {
   const LS  = Math.round(off.x || 0);
   const LT  = Math.round(off.y || 0);
 
-  // ZPL basado en el formato que ya te funcionó:
-  // QR a la izquierda, texto rotado 90° a la derecha.
-  // OJO: el orden Y (PAIS -> APELLIDO -> NOMBRE) con ^A0R
-  // hace que visualmente se lea NOMBRE, APELLIDO, PAÍS en horizontal.
+  // ZPL basado en el formato que ya te funcionó.
   const zpl = `^XA
 ^CI28
 ^PON
@@ -392,7 +392,7 @@ function printPhysical(att, maxRetry = 5) {
         });
       }, (err) => {
         if (attempts >= maxRetry) {
-          return reject(new Error('Impresora no disponible: ' + (err || 'desconocido')));
+          return reject(new Error('Impresora no disponible: ' + (err || 'desconocido'));
         }
         renderInfo('Impresora no disponible, reintentando...', 'bad');
         setTimeout(tryOnce, 1200);
@@ -452,4 +452,3 @@ btnAlta?.addEventListener('click', async () => {
   if (btnAlta) btnAlta.disabled = false;
   busyAlta = false;
 });
-
