@@ -96,7 +96,7 @@ function showResults(items) {
     if (it.dni) sub.push(`DNI: ${it.dni}`);
     if (it.correo) sub.push(it.correo);
     if (it.institucion) sub.push(it.institucion);
-    if (it.descripcion) sub.push(it.descripcion); // NUEVO: mostrar descripción en la lista
+    if (it.descripcion) sub.push(`Gafete: ${it.descripcion}`); // NUEVO: mostrar descripción en la lista
     row.innerHTML = `
       <div class="ri-main">${linea1}</div>
       <div class="ri-sub">${sub.join(' · ')}</div>
@@ -115,7 +115,7 @@ function paintAttendee(att) {
   const profesion   = (att.profesion ?? att.puesto ?? '');
   const correo      = att.correo ?? '';
   const pais        = att.pais ?? '';
-  const descripcion = att.descripcion ?? ''; // NUEVO
+  const descripcion = att.`Gafete: ${it.descripcion}` ?? ''; // NUEVO
 
   renderInfo(`
     <div><b>${nombreCompleto}</b></div>
@@ -402,8 +402,6 @@ function printPhysical(att, maxRetry = 5) {
   });
 }
 
-
-
 // ====== ALTA NUEVA (solo sede principal) ======
 btnAlta?.addEventListener('click', async () => {
   if (busyAlta) return;
@@ -454,6 +452,7 @@ btnAlta?.addEventListener('click', async () => {
   if (btnAlta) btnAlta.disabled = false;
   busyAlta = false;
 });
+
 
 
 
