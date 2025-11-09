@@ -23,23 +23,45 @@ function norm(s) {
   return String(s || '')
     .toLowerCase()
     .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // quita acentos
-    .replace(/\s+/g, '_')                              // espacios -> _
-    .replace(/[^a-z0-9_]/g, '');                       // limpia raros
+    .replace(/\s+/g, '_')                             // espacios -> _
+    .replace(/[^a-z0-9_]/g, '');                      // limpia raros
 }
 
 // Intenta mapear encabezados del Excel a nuestros campos
 function mapHeaderToField(h) {
   const n = norm(h);
-  if (['uuid','id_unico'].includes(n))          return 'uuid';
-  if (['dni','documento','cedula','id'].includes(n)) return 'dni';
-  if (['nombres','nombre','first_name'].includes(n)) return 'nombres';
-  if (['apellidos','apellido','last_name'].includes(n)) return 'apellidos';
-  if (['institucion','institucion_o_empresa','empresa','organization','institucion_'].includes(n)) return 'institucion';
-  if (['puesto','profesion','cargo','role','ocupacion'].includes(n)) return 'puesto';
-  if (['correo','email','correo_electronico','mail'].includes(n)) return 'correo';
-  if (['pais','country'].includes(n))            return 'pais';
-  if (['estado_pago','pago','status_pago'].includes(n)) return 'estado_pago';
-  if (['medio_pago','metodo_pago'].includes(n))  return 'medio_pago';
+
+  if (['uuid', 'id_unico'].includes(n))                         return 'uuid';
+  if (['dni', 'documento', 'cedula', 'id'].includes(n))         return 'dni';
+  if (['nombres', 'nombre', 'first_name'].includes(n))          return 'nombres';
+  if (['apellidos', 'apellido', 'last_name'].includes(n))       return 'apellidos';
+  if ([
+    'institucion',
+    'institucion_o_empresa',
+    'empresa',
+    'organization',
+    'institucion_'
+  ].includes(n))                                                return 'institucion';
+  if (['puesto', 'profesion', 'cargo', 'role', 'ocupacion'].includes(n))
+                                                                return 'puesto';
+  if (['correo', 'email', 'correo_electronico', 'mail'].includes(n))
+                                                                return 'correo';
+  if (['pais', 'country'].includes(n))                          return 'pais';
+  if (['estado_pago', 'pago', 'status_pago'].includes(n))       return 'estado_pago';
+  if (['medio_pago', 'metodo_pago'].includes(n))                return 'medio_pago';
+
+  // NUEVO: descripción libre del asistente
+  if ([
+    'descripcion',
+    'description',
+    'detalle',
+    'detalles',
+    'nota',
+    'notas',
+    'observaciones',
+    'observacion'
+  ].includes(n))                                                return 'descripcion';
+
   // Ignorar lo demás
   return null;
 }
@@ -73,7 +95,10 @@ function mapHeaderToField(h) {
       record[key] = (cell.value ?? '').toString().trim();
     });
 
-    if (!record.dni) { skipped++; continue; }
+    if (!record.dni) {
+      skipped++;
+      continue;
+    }
 
     // Defaults/mapeos
     if (!record.uuid) record.uuid = uuidv4();
