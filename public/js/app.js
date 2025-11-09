@@ -295,10 +295,10 @@ btnPrint?.addEventListener('click', async () => {
   busyPrint = false;
 });
 
-// ====== ZEBRA: HORIZONTAL ======
+// ====== ZEBRA: HORIZONTAL (layout probado) ======
 // Solo: NOMBRE + PRIMER APELLIDO + PAÍS + QR. Sin correo.
-// 59×102 mm @203dpi ≈ 800x600 dots.
-// Offsets opcionales (dots) para que el staff ajuste sin tocar código:
+// 59×102 mm @203dpi ≈ 800x600 dots (usamos ^PW800 ^LL600).
+// Offsets opcionales (dots):
 //   window.CFG.PRINT_OFFSET = { x: 0, y: 0 }
 function printPhysical(att, maxRetry = 5) {
   const sanitize = s => String(s || '')
@@ -314,23 +314,30 @@ function printPhysical(att, maxRetry = 5) {
   // URL para auto check-in en charla.html
   const QR_URL = `${location.origin}/charla.html?uuid=${encodeURIComponent(UUID)}&auto=1`;
 
-  // Cortes duros (una línea por campo)
+  // Cortes duros
   const cut = (s, n) => (s.length > n ? s.slice(0, n) : s);
   const L1 = cut(NOMBRE,    20); // Nombre
   const L2 = cut(PRIMER_AP, 20); // Primer apellido
   const L3 = cut(PAIS,      18); // País
 
-  // Tamaños según longitud
-  const sizeName    = (L1.length > 14) ? 90 : 110;
-  const sizeLast    = (L2.length > 14) ? 90 : 110;
-  const sizeCountry = (L3.length > 12) ? 60 : 70;
+  // Tamaños según longitud (manteniendo proporciones del template dado)
+  const sizeNameBase    = 110;
+  const sizeLastBase    = 110;
+  const sizeCountryBase = 70;
+
+  const sizeName    = (L1.length > 14) ? 90 : sizeNameBase;
+  const sizeLast    = (L2.length > 14) ? 90 : sizeLastBase;
+  const sizeCountry = (L3.length > 12) ? 60 : sizeCountryBase;
 
   // Offsets desde settings
   const off = (window.CFG && window.CFG.PRINT_OFFSET) || { x: 0, y: 0 };
-  const LS  = Math.round(off.x || 0); // shift horizontal
-  const LT  = Math.round(off.y || 0); // shift vertical
+  const LS  = Math.round(off.x || 0);
+  const LT  = Math.round(off.y || 0);
 
-  // ZPL: QR a la izquierda; texto horizontal a la derecha en orden NOMBRE / PRIMER APELLIDO / PAÍS
+  // ZPL basado en el formato que ya te funcionó:
+  // QR a la izquierda, texto rotado 90° a la derecha.
+  // OJO: el orden Y (PAIS -> APELLIDO -> NOMBRE) con ^A0R
+  // hace que visualmente se lea NOMBRE, APELLIDO, PAÍS en horizontal.
   const zpl = `^XA
 ^CI28
 ^PON
@@ -340,26 +347,26 @@ function printPhysical(att, maxRetry = 5) {
 ^LT${LT}
 ^LH0,0
 
-^FX QR a la izquierda
-^FO60,80
+^FX ---- QR a la izquierda ----
+^FO100,100
 ^BQN,2,7
 ^FDLA,${escapeZPL(QR_URL)}^FS
 
-^FX Texto a la derecha (horizontal: NOMBRE / PRIMER APELLIDO / PAIS)
-^FO320,80
-^A0N,${sizeName},${sizeName}
-^FB420,1,0,L,0
-^FD${escapeZPL(L1)}^FS
+^FX ---- Texto a la derecha (rotado 90°, bloque centrado) ----
+^FO260,400
+^A0R,${sizeCountry},${sizeCountry}
+^FB480,1,0,C,0
+^FD${escapeZPL(L3)}^FS
 
-^FO320,200
-^A0N,${sizeLast},${sizeLast}
-^FB420,1,0,L,0
+^FO360,400
+^A0R,${sizeLast},${sizeLast}
+^FB480,1,0,C,0
 ^FD${escapeZPL(L2)}^FS
 
-^FO320,320
-^A0N,${sizeCountry},${sizeCountry}
-^FB420,1,0,L,0
-^FD${escapeZPL(L3)}^FS
+^FO500,400
+^A0R,${sizeName},${sizeName}
+^FB480,1,0,C,0
+^FD${escapeZPL(L1)}^FS
 
 ^XZ`;
 
@@ -385,7 +392,7 @@ function printPhysical(att, maxRetry = 5) {
         });
       }, (err) => {
         if (attempts >= maxRetry) {
-          return reject(new Error('Impresora no disponible: ' + (err || 'desconocido')));
+          return reject(new Error('Impresora no disponible: ' + (err || 'desconocido'));
         }
         renderInfo('Impresora no disponible, reintentando...', 'bad');
         setTimeout(tryOnce, 1200);
