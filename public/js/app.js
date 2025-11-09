@@ -298,8 +298,8 @@ btnPrint?.addEventListener('click', async () => {
   busyPrint = false;
 });
 
-// ====== ZEBRA: HORIZONTAL (layout final) ======
-// Solo: NOMBRE + PRIMER APELLIDO + PAÍS + QR. Sin correo.
+// ====== ZEBRA: HORIZONTAL (layout final con primer nombre y apellido más grande) ======
+// Solo: PRIMER NOMBRE + PRIMER APELLIDO + PAÍS + QR. Sin correo.
 // 59×102 mm @203dpi ≈ 800x600 dots (usamos ^PW800 ^LL600).
 // Offsets opcionales (dots):
 //   window.CFG.PRINT_OFFSET = { x: 0, y: 0 }
@@ -308,27 +308,36 @@ function printPhysical(att, maxRetry = 5) {
     .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
     .replace(/[^\x20-\x7E]/g, '');
 
-  const NOMBRE    = sanitize((att.nombres   || '').trim()).toUpperCase();
-  const APELLIDOS = sanitize((att.apellidos || '').trim()).toUpperCase();
-  const PRIMER_AP = APELLIDOS.split(/\s+/)[0] || '';   // SOLO primer apellido
-  const PAIS      = sanitize((att.pais      || '').trim()).toUpperCase();
-  const UUID      = String(att.uuid || '');
+  // Tomar solo el PRIMER NOMBRE
+  const NOMBRES_RAW    = sanitize((att.nombres || '').trim()).toUpperCase();
+  const PRIMER_NOMBRE  = (NOMBRES_RAW.split(/\s+/)[0] || '').trim();
+
+  // Tomar solo el PRIMER APELLIDO
+  const APELLIDOS_RAW  = sanitize((att.apellidos || '').trim()).toUpperCase();
+  const PRIMER_AP      = (APELLIDOS_RAW.split(/\s+/)[0] || '').trim();
+
+  const PAIS           = sanitize((att.pais || '').trim()).toUpperCase();
+  const UUID           = String(att.uuid || '');
 
   // URL para auto check-in en charla.html
   const QR_URL = `${location.origin}/charla.html?uuid=${encodeURIComponent(UUID)}&auto=1`;
 
   // Cortes duros
   const cut = (s, n) => (s.length > n ? s.slice(0, n) : s);
-  const L1 = cut(NOMBRE,    20); // Nombre
-  const L2 = cut(PRIMER_AP, 20); // Primer apellido
-  const L3 = cut(PAIS,      18); // País
+  const L1 = cut(PRIMER_NOMBRE, 20); // Primer nombre
+  const L2 = cut(PRIMER_AP,     20); // Primer apellido
+  const L3 = cut(PAIS,          18); // País
 
   // Offsets desde settings
   const off = (window.CFG && window.CFG.PRINT_OFFSET) || { x: 0, y: 0 };
   const LS  = Math.round(off.x || 0);
   const LT  = Math.round(off.y || 0);
 
-  // Template final proporcionado (QR grande + texto rotado 90°, anclado lejos del QR)
+  // Apellido un poco más grande: 120 en vez de 110
+  const sizeCountry = 70;
+  const sizeLast    = 120;
+  const sizeName    = 110;
+
   const zpl = `^XA
 ^CI28
 ^PON
@@ -339,21 +348,24 @@ function printPhysical(att, maxRetry = 5) {
 ^LH0,0
 
 ^FX ---- QR a la izquierda ----
-^FO230,175
-^BQN,2,10
+^FO50,50
+^BQN,2,7
 ^FDLA,${escapeZPL(QR_URL)}^FS
 
-^FX ---- Texto a la derecha (rotado 90°, anclado lejos del QR) ----
-^FO250,600
-^A0R,70,70
+^FX ---- Texto a la derecha (rotado 90°, bloque centrado) ----
+^FO260,400
+^A0R,${sizeCountry},${sizeCountry}
+^FB480,1,0,C,0
 ^FD${escapeZPL(L3)}^FS
 
-^FO350,600
-^A0R,110,110
+^FO360,400
+^A0R,${sizeLast},${sizeLast}
+^FB480,1,0,C,0
 ^FD${escapeZPL(L2)}^FS
 
-^FO450,600
-^A0R,110,110
+^FO500,400
+^A0R,${sizeName},${sizeName}
+^FB480,1,0,C,0
 ^FD${escapeZPL(L1)}^FS
 
 ^XZ`;
@@ -380,7 +392,7 @@ function printPhysical(att, maxRetry = 5) {
         });
       }, (err) => {
         if (attempts >= maxRetry) {
-          return reject(new Error('Impresora no disponible: ' + (err || 'desconocido')));
+          return reject(new Error('Impresora no disponible: ' + (err || 'desconocido'));
         }
         renderInfo('Impresora no disponible, reintentando...', 'bad');
         setTimeout(tryOnce, 1200);
@@ -389,6 +401,7 @@ function printPhysical(att, maxRetry = 5) {
     tryOnce();
   });
 }
+
 
 
 // ====== ALTA NUEVA (solo sede principal) ======
@@ -441,5 +454,6 @@ btnAlta?.addEventListener('click', async () => {
   if (btnAlta) btnAlta.disabled = false;
   busyAlta = false;
 });
+
 
 
