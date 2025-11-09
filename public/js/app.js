@@ -279,91 +279,98 @@ btnPrint?.addEventListener('click', async ()=>{
   busyPrint = false;
 });
 
-// ====== ZEBRA: impresión física (HORIZONTAL) ======
+// ====== ZEBRA: impresión física (VERTICAL / PORTRAIT, simple y robusto) ======
 // Solo: NOMBRE, APELLIDOS, PAÍS + QR (sin correo).
-// El QR codifica la URL a charla.html con ?uuid=...&auto=1
+// QR codifica URL a charla.html con ?uuid=...&auto=1 para escaneo con celular.
+// Sin rotaciones de driver, fuentes ^A0N (no rotadas). Todo centrado con ^FB.
+// Dimensiones para pulsera 59×102 mm a 203 dpi: ^PW=472, ^LL=816.
 function printPhysical(att, maxRetry = 5){
-  // Normaliza/ASCII
-  const ascii = s => String(s || '')
+  const sanitize = s => String(s||'')
     .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
     .replace(/[^\x20-\x7E]/g, '');
 
-  const NOMBRE    = ascii((att.nombres   || '').trim()).toUpperCase();
-  const APELLIDOS = ascii((att.apellidos || '').trim()).toUpperCase();
-  const PAIS      = ascii((att.pais      || '').trim()).toUpperCase();
+  const NOMBRE    = sanitize((att.nombres   || '').trim()).toUpperCase();
+  const APELLIDOS = sanitize((att.apellidos || '').trim()).toUpperCase();
+  const PAIS      = sanitize((att.pais      || '').trim()).toUpperCase();
   const UUID      = String(att.uuid || '');
 
   // URL para auto check-in en charla.html
   const QR_URL = `${location.origin}/charla.html?uuid=${encodeURIComponent(UUID)}&auto=1`;
 
-  // Ajuste simple de tamaño por longitud
-  const sizeName    = (NOMBRE.length    > 20) ? 90 : 110;
-  const sizeLast    = (APELLIDOS.length > 20) ? 90 : 110;
-  const sizeCountry = (PAIS.length      > 18) ? 60 : 70;
+  // Recortes duros para evitar overflow en 1 línea
+  const cut = (s, n) => (s.length > n ? s.slice(0, n) : s);
+  const L1 = cut(NOMBRE,    22);   // ancho 59mm: una línea grande centrada
+  const L2 = cut(APELLIDOS, 22);
+  const L3 = cut(PAIS,      20);
 
-  const cut = (s, max) => (s.length > max ? s.slice(0, max) : s);
-  const L1 = cut(NOMBRE,    28);
-  const L2 = cut(APELLIDOS, 28);
-  const L3 = cut(PAIS,      24);
+  // Tamaños adaptativos muy conservadores
+  const sizeName    = (L1.length > 16) ? 68 : 80;
+  const sizeLast    = (L2.length > 16) ? 68 : 80;
+  const sizeCountry = (L3.length > 14) ? 44 : 56;
 
   const zpl = `
 ^XA
 ^CI28
-^PW800
-^LL400
+^PON
+^FWN
+^PW472
+^LL816
 ^LS0
 ^LH0,0
 
-^FX ---- QR grande a la izquierda (URL con uuid) ----
-^FO40,60
-^BQN,2,8
+^FX ---- QR centrado arriba ----
+^FO136,24
+^BQN,2,7
 ^FDLA,${escapeZPL(QR_URL)}^FS
 
-^FX ---- Texto a la derecha: Nombre, Apellidos, País ----
-^FO280,40
+^FX ---- Nombre (centrado) ----
+^FO20,330
 ^A0N,${sizeName},${sizeName}
-^FB500,1,0,L,0
+^FB432,1,0,C,0
 ^FD${escapeZPL(L1)}^FS
 
-^FO280,160
+^FX ---- Apellidos (centrado) ----
+^FO20,420
 ^A0N,${sizeLast},${sizeLast}
-^FB500,1,0,L,0
+^FB432,1,0,C,0
 ^FD${escapeZPL(L2)}^FS
 
-^FO280,280
+^FX ---- País (centrado) ----
+^FO20,510
 ^A0N,${sizeCountry},${sizeCountry}
-^FB500,1,0,L,0
+^FB432,1,0,C,0
 ^FD${escapeZPL(L3)}^FS
 
 ^XZ`;
 
   return new Promise((resolve, reject)=>{
     let attempts = 0;
-    function tryOnce(){
+    const tryOnce = ()=>{
       attempts++;
-      window.BrowserPrint.getDefaultDevice('printer', function(printer){
+      if (!window.BrowserPrint || typeof window.BrowserPrint.getDefaultDevice !== 'function'){
+        return reject(new Error('BrowserPrint no disponible'));
+      }
+      window.BrowserPrint.getDefaultDevice('printer', (printer)=>{
         if(!printer){
           if(attempts >= maxRetry) return reject(new Error('No se encontró impresora Zebra'));
           renderInfo('No se encontró impresora. Reintentando...', 'bad');
           return setTimeout(tryOnce, 1200);
         }
-        printer.send(zpl, function(){
-          resolve();
-        }, function(err){
+        printer.send(zpl, ()=>resolve(), (err)=>{
           if(attempts >= maxRetry){
             return reject(new Error('Error impresión Zebra: ' + (err || 'desconocido')));
           }
           renderInfo('Error impresión, reintentando...', 'bad');
           setTimeout(tryOnce, 1500);
         });
-      }, function(err){
+      }, (err)=>{
         if(attempts >= maxRetry){
           return reject(new Error('Impresora no disponible: ' + (err || 'desconocido')));
         }
         renderInfo('Impresora no disponible, reintentando...', 'bad');
         setTimeout(tryOnce, 1200);
       });
-    }
+    };
     tryOnce();
   });
 }
