@@ -355,6 +355,7 @@ function printPhysical(att, maxRetry = 5) {
 ^FX ---- Texto a la derecha (rotado 90°, sin ^FB para NO hacer wrap) ----
 ^FO260,400
 ^A0R,${sizeCountry},${sizeCountry}
+^FB480,1,0,C,0
 ^FD${escapeZPL(L3)}^FS
 
 ^FO380,400
@@ -450,6 +451,7 @@ btnAlta?.addEventListener('click', async () => {
   if (btnAlta) btnAlta.disabled = false;
   busyAlta = false;
 });
+
 
 
 
