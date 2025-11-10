@@ -1,15 +1,26 @@
-// charla.js — Control de acceso con auto check-in si llega ?uuid=... (&auto=1). Usa window.CFG.
+// charla.js — Control de acceso. Usa window.CFG.
+// QR: contiene directamente el UUID (sin URL).
+
+import { BrowserMultiFormatReader } from 'https://unpkg.com/@zxing/browser@0.1.4/esm/index.js';
 
 // ====== CONFIG ======
 const CFG = window.CFG || { SEDE: 'sede', SESSION_ID: '' };
 
 // ====== ELEMENTOS ======
-const elMeta  = document.getElementById('meta');
-const elScan  = document.getElementById('scan');
-const msg     = document.getElementById('msg');
-const count   = document.getElementById('count');
+const elMeta   = document.getElementById('meta');
+const elScan   = document.getElementById('scan');
+const msg      = document.getElementById('msg');
+const count    = document.getElementById('count');
 
-if (elMeta) elMeta.textContent = `SEDE: ${CFG.SEDE || '—'} | SESSION: ${CFG.SESSION_ID || '—'}`;
+// Elementos para cámara (deben existir en el HTML)
+const camToggle = document.getElementById('cam-toggle');
+const camWrap   = document.getElementById('cam-wrap');
+const camView   = document.getElementById('cam-view');
+const camStatus = document.getElementById('cam-status');
+
+if (elMeta) {
+  elMeta.textContent = `SEDE: ${CFG.SEDE || '—'} | SESSION: ${CFG.SESSION_ID || '—'}`;
+}
 
 // ====== NET HELPER ======
 async function fetchJSON(url, opt = {}, timeoutMs = 8000) {
@@ -17,9 +28,13 @@ async function fetchJSON(url, opt = {}, timeoutMs = 8000) {
   const id = setTimeout(() => ctrl.abort(new Error('timeout')), timeoutMs);
   try {
     const r = await fetch(url, { ...opt, signal: ctrl.signal, cache: 'no-store' });
-    if (!r.ok) return { success: false, status: r.status, message: `HTTP ${r.status}` };
+    if (!r.ok) {
+      return { success: false, status: r.status, message: `HTTP ${r.status}` };
+    }
     const ct = r.headers.get('content-type') || '';
-    if (!ct.includes('application/json')) return { success: false, message: 'Respuesta no-JSON' };
+    if (!ct.includes('application/json')) {
+      return { success: false, message: 'Respuesta no-JSON' };
+    }
     return await r.json();
   } catch (e) {
     return { success: false, offline: true, error: String(e.message || e) };
@@ -28,60 +43,176 @@ async function fetchJSON(url, opt = {}, timeoutMs = 8000) {
   }
 }
 
-function paint(ok, txt){
-  msg.innerHTML = ok ? `<b class="ok">${txt||'OK'}</b>` : `<b class="no">${txt||'Error'}</b>`;
+function paint(ok, txt) {
+  if (!msg) return;
+  msg.innerHTML = ok
+    ? `<b class="ok">${txt || 'OK'}</b>`
+    : `<b class="no">${txt || 'Error'}</b>`;
+}
+
+// ====== UUID HELPER ======
+function isValidUUID(str) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
 }
 
 // ====== CHECK-IN ======
-async function checkIn(uuid){
-  if (!uuid) return;
-  try{
+async function checkIn(uuid) {
+  if (!uuid || !isValidUUID(uuid)) {
+    paint(false, 'UUID inválido');
+    return;
+  }
+
+  try {
     const res = await fetchJSON('/api/checkin', {
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ uuid, session_id: CFG.SESSION_ID, sede: CFG.SEDE })
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        uuid,
+        session_id: CFG.SESSION_ID,
+        sede: CFG.SEDE
+      })
     });
-    if (res.success){
-      const offlineNote = res.message && /offline/i.test(res.message) ? ' (offline)' : '';
+
+    if (res.success) {
+      const offlineNote =
+        res.message && /offline/i.test(res.message) ? ' (offline)' : '';
       paint(true, 'Registrado' + offlineNote);
       refresh();
     } else {
       paint(false, res.message || 'Error');
     }
-  }catch(_){
+  } catch {
     paint(false, 'Offline / error de red');
   }
 }
 
-// ENTER manual
-elScan?.addEventListener('keydown', async (e)=>{
-  if (e.key !== 'Enter') return;
-  if (e.repeat) return;
-  const uuid = elScan.value.trim();
+// ====== INPUT MANUAL (scanner USB o tipeo) ======
+elScan?.addEventListener('keydown', async (e) => {
+  if (e.key !== 'Enter' || e.repeat) return;
+
+  const raw = elScan.value.trim();
   elScan.value = '';
-  await checkIn(uuid);
+
+  if (!isValidUUID(raw)) {
+    paint(false, 'UUID inválido');
+    return;
+  }
+
+  await checkIn(raw);
 });
 
-// Auto check-in desde URL (?uuid=...&auto=1)
-(async function autoFromURL(){
+// ====== AUTO CHECK-IN OPCIONAL DESDE URL (?uuid=...&auto=1) ======
+// Sigue existiendo por si alguien lo usa manualmente.
+// No depende del contenido del QR ahora.
+(async function autoFromURL() {
   const p = new URLSearchParams(location.search);
   const uuid = p.get('uuid');
   const auto = p.get('auto') ?? '1';
-  if (uuid){
+
+  if (uuid && isValidUUID(uuid)) {
     if (elScan) elScan.value = uuid;
-    if (auto !== '0'){ await checkIn(uuid); }
-    // limpiar la URL para evitar dobles registros si recargan
-    try { history.replaceState({}, '', location.pathname); } catch(_) {}
+    if (auto !== '0') {
+      await checkIn(uuid);
+    }
+    try {
+      history.replaceState({}, '', location.pathname);
+    } catch {}
   }
 })();
 
 // ====== DASHBOARD SESIÓN ======
-async function refresh(){
+async function refresh() {
   const j = await fetchJSON('/api/dashboard');
-  if (j.success){
-    const n = j.porSesion?.[CFG.SESSION_ID] || 0;
-    if (count) count.textContent = `Ingresos a esta sesión: ${n}`;
+  if (j.success) {
+    const n = j.porSesion?.[CFG.SESSION_ID] ?? 0;
+    if (count) {
+      count.textContent = `Ingresos a esta sesión: ${n}`;
+    }
   }
 }
 refresh();
 setInterval(refresh, 3000);
+
+// ====== ESCANEO CON CÁMARA (QR integrado en la misma página) ======
+let codeReader = null;
+let scanning = false;
+let lastUUID = null;
+let lastScanTs = 0;
+
+async function startCameraScanner() {
+  if (!camView || scanning) return;
+
+  if (!codeReader) {
+    codeReader = new BrowserMultiFormatReader();
+  }
+
+  scanning = true;
+  if (camWrap) camWrap.style.display = 'block';
+  if (camStatus) camStatus.textContent = 'Apunta al código QR…';
+
+  try {
+    await codeReader.decodeFromVideoDevice(
+      null, // cámara por defecto
+      camView,
+      async (result, err) => {
+        if (!scanning || !result) return;
+
+        const text =
+          (typeof result.getText === 'function'
+            ? result.getText()
+            : result.text) || '';
+        const uuid = text.trim();
+
+        if (!isValidUUID(uuid)) {
+          // Ignoramos basura. No spameamos errores para no molestar al operador.
+          return;
+        }
+
+        const now = Date.now();
+
+        // Antirepetición: evita doble registro del mismo código muy seguido
+        if (uuid === lastUUID && now - lastScanTs < 1500) {
+          return;
+        }
+
+        lastUUID = uuid;
+        lastScanTs = now;
+
+        await checkIn(uuid);
+      }
+    );
+  } catch (e) {
+    scanning = false;
+    if (camStatus) {
+      camStatus.textContent =
+        'No se pudo acceder a la cámara. Revisa permisos o usa el escáner manual.';
+    }
+    paint(false, 'Error al iniciar cámara');
+  }
+}
+
+async function stopCameraScanner() {
+  if (!codeReader || !scanning) {
+    scanning = false;
+    if (camWrap) camWrap.style.display = 'none';
+    return;
+  }
+
+  scanning = false;
+  try {
+    await codeReader.reset(); // Detiene el stream
+  } catch {}
+  if (camWrap) camWrap.style.display = 'none';
+  if (camStatus) camStatus.textContent = 'Cámara detenida.';
+}
+
+// Toggle botón cámara
+camToggle?.addEventListener('click', () => {
+  if (!scanning) {
+    startCameraScanner();
+    camToggle.textContent = 'Detener cámara';
+  } else {
+    stopCameraScanner();
+    camToggle.textContent = 'Usar cámara para escanear';
+  }
+});
