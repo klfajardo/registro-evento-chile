@@ -173,7 +173,7 @@ body.scan-ok::after {
   background: rgba(0, 160, 90, 0.22);
   pointer-events: none;
   opacity: 0;
-  animation: scan-ok-pop 260ms ease-out;
+  animation: scan-ok-pop 600ms ease-out;
   z-index: 9999;
 }
 
@@ -191,6 +191,7 @@ body.scan-ok::after {
     transform: scale(1);
   }
 }
+
 
 
 
