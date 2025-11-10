@@ -35,24 +35,54 @@
     <section class="card">
       <h2 class="section-title">Escanea o pega UUID y presiona Enter</h2>
 
+      <!-- Input manual / lector tipo pistola -->
       <div class="row" style="margin-bottom:8px">
         <input id="scan" class="input" placeholder="UUID…" autofocus />
       </div>
 
+      <!-- Botón para activar cámara -->
+      <div class="row" style="margin-top:8px">
+        <button id="cam-toggle" class="btn">Usar cámara para escanear</button>
+      </div>
+
+      <!-- Vista de cámara / lector QR integrado -->
+      <div id="cam-wrap" class="card" style="display:none; margin-top:10px; padding:10px;">
+        <video
+          id="cam-view"
+          style="width:100%; max-height:260px; border-radius:6px; background:#000;"
+          autoplay
+          playsinline
+        ></video>
+        <div
+          id="cam-status"
+          class="info"
+          style="margin-top:6px; font-size:13px;"
+        >
+          Permite acceso a la cámara para comenzar.
+        </div>
+      </div>
+
       <!-- Mensajes de estado -->
-      <div id="msg" class="info">Esperando escaneo…</div>
+      <div id="msg" class="info" style="margin-top:10px;">Esperando escaneo…</div>
 
       <!-- Contador/estado de sesión -->
       <div class="row" style="margin-top:14px">
         <div class="card" style="padding:14px; text-align:center">
-          <div style="color:var(--muted); font-weight:600; margin-bottom:6px">Ingresos acumulados</div>
-          <div id="count" style="font-size:34px; font-weight:800; color:var(--brand-700)">—</div>
+          <div style="color:var(--muted); font-weight:600; margin-bottom:6px">
+            Ingresos acumulados
+          </div>
+          <div
+            id="count"
+            style="font-size:34px; font-weight:800; color:var(--brand-700)"
+          >—</div>
         </div>
       </div>
     </section>
   </main>
 
-  <footer class="footer">SLIPE 2025 · Puerto Varas, Chile · 11–14 de noviembre</footer>
+  <footer class="footer">
+    SLIPE 2025 · Puerto Varas, Chile · 11–14 de noviembre
+  </footer>
 
   <!-- Carga primero settings.js para exponer window.CFG -->
   <script src="/js/settings.js"></script>
