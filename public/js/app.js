@@ -320,7 +320,7 @@ function printPhysical(att, maxRetry = 5) {
   const UUID          = String(att.uuid || '');
 
   // URL para auto check-in
-  const QR_URL = `${location.origin}/charla.html?uuid=${encodeURIComponent(UUID)}&auto=1`;
+  //const QR_URL = `${location.origin}/charla.html?uuid=${encodeURIComponent(UUID)}&auto=1`;
 
   // Cortes duros (evitar textos absurdamente largos, pero SIN wrap)
   const cut = (s, n) => (s.length > n ? s.slice(0, n) : s);
@@ -350,7 +350,7 @@ function printPhysical(att, maxRetry = 5) {
 ^FX ---- QR a la izquierda ----
 ^FO50,50
 ^BQN,2,7
-^FDLA,${escapeZPL(QR_URL)}^FS
+^FDLA,${escapeZPL(UUID)}^FS
 
 ^FX ---- Texto a la derecha (rotado 90°, sin ^FB para NO hacer wrap) ----
 ^FO260,400
@@ -451,6 +451,7 @@ btnAlta?.addEventListener('click', async () => {
   if (btnAlta) btnAlta.disabled = false;
   busyAlta = false;
 });
+
 
 
 
