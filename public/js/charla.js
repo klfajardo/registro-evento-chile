@@ -15,6 +15,7 @@ const camToggle = document.getElementById('cam-toggle');
 const camWrap   = document.getElementById('cam-wrap');
 const camView   = document.getElementById('cam-view');
 const camStatus = document.getElementById('cam-status');
+const body      = document.body || null;
 
 if (elMeta) {
   elMeta.textContent = `SEDE: ${CFG.SEDE || '—'} | SESSION: ${CFG.SESSION_ID || '—'}`;
@@ -46,6 +47,15 @@ function paint(ok, txt) {
   msg.innerHTML = ok
     ? `<b class="ok">${txt || 'OK'}</b>`
     : `<b class="no">${txt || 'Error'}</b>`;
+}
+
+// ====== FLASH VISUAL OK ======
+function flashScanOk() {
+  if (!body) return;
+  body.classList.remove('scan-ok');   // reset previo
+  void body.offsetWidth;              // reflow para reiniciar anim
+  body.classList.add('scan-ok');
+  setTimeout(() => body.classList.remove('scan-ok'), 320); // limpiar
 }
 
 // ====== UUID HELPERS ======
@@ -97,6 +107,7 @@ async function checkIn(uuid) {
       const offlineNote =
         res.message && /offline/i.test(res.message) ? ' (offline)' : '';
       paint(true, 'Registrado' + offlineNote);
+      flashScanOk();   // <- feedback visual
       refresh();
     } else {
       paint(false, res.message || 'Error');
@@ -148,7 +159,6 @@ refresh();
 setInterval(refresh, 3000);
 
 // ====== ESCANEO CON CÁMARA (QR integrado) ======
-
 let codeReader = null;
 let scanning = false;
 let lastUUID = null;
