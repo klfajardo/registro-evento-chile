@@ -316,7 +316,7 @@ function printPhysical(att, maxRetry = 5) {
   const APELLIDOS_RAW = sanitize((att.apellidos || '').trim()).toUpperCase();
   const PRIMER_AP     = (APELLIDOS_RAW.split(/\s+/)[0] || '').trim();
 
-  const PAIS          = sanitize((att.pais || '').trim()).toUpperCase();
+  const PAIS          = String(att.pais);
   const UUID          = String(att.uuid || '');
 
   // URL para auto check-in
@@ -450,6 +450,7 @@ btnAlta?.addEventListener('click', async () => {
   if (btnAlta) btnAlta.disabled = false;
   busyAlta = false;
 });
+
 
 
 
