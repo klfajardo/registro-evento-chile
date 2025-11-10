@@ -1,7 +1,6 @@
 // charla.js — Control de acceso. Usa window.CFG.
 // QR: contiene directamente el UUID (sin URL).
-
-import { BrowserMultiFormatReader } from 'https://unpkg.com/@zxing/library@0.20.0/esm/index.js';
+// Requiere ZXing UMD cargado antes (window.ZXing).
 
 // ====== CONFIG ======
 const CFG = window.CFG || { SEDE: 'sede', SESSION_ID: '' };
@@ -12,7 +11,6 @@ const elScan   = document.getElementById('scan');
 const msg      = document.getElementById('msg');
 const count    = document.getElementById('count');
 
-// Elementos para cámara (deben existir en el HTML)
 const camToggle = document.getElementById('cam-toggle');
 const camWrap   = document.getElementById('cam-wrap');
 const camView   = document.getElementById('cam-view');
@@ -102,9 +100,7 @@ elScan?.addEventListener('keydown', async (e) => {
 });
 
 // ====== AUTO CHECK-IN OPCIONAL DESDE URL (?uuid=...&auto=1) ======
-// Sigue existiendo por si alguien lo usa manualmente.
-// No depende del contenido del QR ahora.
-(async function autoFromURL() {
+(function autoFromURL() {
   const p = new URLSearchParams(location.search);
   const uuid = p.get('uuid');
   const auto = p.get('auto') ?? '1';
@@ -112,7 +108,7 @@ elScan?.addEventListener('keydown', async (e) => {
   if (uuid && isValidUUID(uuid)) {
     if (elScan) elScan.value = uuid;
     if (auto !== '0') {
-      await checkIn(uuid);
+      checkIn(uuid);
     }
     try {
       history.replaceState({}, '', location.pathname);
@@ -133,17 +129,37 @@ async function refresh() {
 refresh();
 setInterval(refresh, 3000);
 
-// ====== ESCANEO CON CÁMARA (QR integrado en la misma página) ======
+// ====== ESCANEO CON CÁMARA (QR integrado) ======
+
 let codeReader = null;
 let scanning = false;
 let lastUUID = null;
 let lastScanTs = 0;
 
+function ensureZXing() {
+  if (!window.ZXing || !window.ZXing.BrowserMultiFormatReader) {
+    console.error('ZXing no está disponible. Revisa la carga del script UMD.');
+    if (camStatus) {
+      camStatus.textContent = 'Error cargando lector QR. Revisa conexión.';
+    }
+    paint(false, 'No se pudo inicializar el lector QR');
+    return false;
+  }
+  return true;
+}
+
 async function startCameraScanner() {
   if (!camView || scanning) return;
+  if (!ensureZXing()) return;
+
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    if (camStatus) camStatus.textContent = 'Este navegador no soporta cámara.';
+    paint(false, 'Navegador sin soporte de cámara');
+    return;
+  }
 
   if (!codeReader) {
-    codeReader = new BrowserMultiFormatReader();
+    codeReader = new window.ZXing.BrowserMultiFormatReader();
   }
 
   scanning = true;
@@ -152,37 +168,44 @@ async function startCameraScanner() {
 
   try {
     await codeReader.decodeFromVideoDevice(
-      null, // cámara por defecto
-      camView,
+      null,              // cámara por defecto
+      camView,           // elemento <video>
       async (result, err) => {
-        if (!scanning || !result) return;
+        if (!scanning) return;
 
-        const text =
-          (typeof result.getText === 'function'
-            ? result.getText()
-            : result.text) || '';
-        const uuid = text.trim();
+        if (result) {
+          const text =
+            (typeof result.getText === 'function'
+              ? result.getText()
+              : result.text) || '';
+          const uuid = text.trim();
 
-        if (!isValidUUID(uuid)) {
-          // Ignoramos basura. No spameamos errores para no molestar al operador.
-          return;
+          if (!isValidUUID(uuid)) {
+            // QR ajeno → ignorar
+            return;
+          }
+
+          const now = Date.now();
+          if (uuid === lastUUID && now - lastScanTs < 1500) {
+            // evitar doble lectura inmediata
+            return;
+          }
+
+          lastUUID = uuid;
+          lastScanTs = now;
+
+          await checkIn(uuid);
         }
 
-        const now = Date.now();
-
-        // Antirepetición: evita doble registro del mismo código muy seguido
-        if (uuid === lastUUID && now - lastScanTs < 1500) {
-          return;
+        // Errores de lectura son normales mientras escanea.
+        if (err && !(err instanceof window.ZXing.NotFoundException)) {
+          console.warn('ZXing error:', err);
         }
-
-        lastUUID = uuid;
-        lastScanTs = now;
-
-        await checkIn(uuid);
       }
     );
   } catch (e) {
     scanning = false;
+    console.error('Error al iniciar cámara:', e);
     if (camStatus) {
       camStatus.textContent =
         'No se pudo acceder a la cámara. Revisa permisos o usa el escáner manual.';
@@ -200,8 +223,11 @@ async function stopCameraScanner() {
 
   scanning = false;
   try {
-    await codeReader.reset(); // Detiene el stream
-  } catch {}
+    codeReader.reset(); // detiene stream
+  } catch (e) {
+    console.warn('Error al detener cámara:', e);
+  }
+
   if (camWrap) camWrap.style.display = 'none';
   if (camStatus) camStatus.textContent = 'Cámara detenida.';
 }
@@ -210,10 +236,9 @@ async function stopCameraScanner() {
 camToggle?.addEventListener('click', () => {
   if (!scanning) {
     startCameraScanner();
-    camToggle.textContent = 'Detener cámara';
+    if (camToggle) camToggle.textContent = 'Detener cámara';
   } else {
     stopCameraScanner();
-    camToggle.textContent = 'Usar cámara para escanear';
+    if (camToggle) camToggle.textContent = 'Usar cámara para escanear';
   }
 });
-
