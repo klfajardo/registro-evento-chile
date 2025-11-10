@@ -1,5 +1,5 @@
 // charla.js — Control de acceso. Usa window.CFG.
-// QR: contiene directamente el UUID (sin URL).
+// QR: contiene el UUID (directo o con prefijo tipo "LA,UUID").
 // Requiere ZXing UMD cargado antes (window.ZXing).
 
 // ====== CONFIG ======
@@ -48,12 +48,34 @@ function paint(ok, txt) {
     : `<b class="no">${txt || 'Error'}</b>`;
 }
 
-// ====== UUID HELPER ======
+// ====== UUID HELPERS ======
 function isValidUUID(str) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
 }
 
+// Extrae el UUID desde cualquier payload (LA,UUID / URL / texto crudo)
+function extractUUID(payload) {
+  if (!payload) return null;
+  const text = String(payload).trim();
+
+  // Busca un patrón de UUID en cualquier parte
+  const m = text.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
+  if (m && isValidUUID(m[0])) {
+    return m[0];
+  }
+  return null;
+}
+
 // ====== CHECK-IN ======
+async function checkInFromPayload(payload) {
+  const uuid = extractUUID(payload);
+  if (!uuid) {
+    paint(false, 'UUID inválido');
+    return;
+  }
+  await checkIn(uuid);
+}
+
 async function checkIn(uuid) {
   if (!uuid || !isValidUUID(uuid)) {
     paint(false, 'UUID inválido');
@@ -91,21 +113,17 @@ elScan?.addEventListener('keydown', async (e) => {
   const raw = elScan.value.trim();
   elScan.value = '';
 
-  if (!isValidUUID(raw)) {
-    paint(false, 'UUID inválido');
-    return;
-  }
-
-  await checkIn(raw);
+  await checkInFromPayload(raw);
 });
 
 // ====== AUTO CHECK-IN OPCIONAL DESDE URL (?uuid=...&auto=1) ======
 (function autoFromURL() {
   const p = new URLSearchParams(location.search);
-  const uuid = p.get('uuid');
+  const raw = p.get('uuid');
   const auto = p.get('auto') ?? '1';
 
-  if (uuid && isValidUUID(uuid)) {
+  const uuid = extractUUID(raw);
+  if (uuid) {
     if (elScan) elScan.value = uuid;
     if (auto !== '0') {
       checkIn(uuid);
@@ -168,8 +186,8 @@ async function startCameraScanner() {
 
   try {
     await codeReader.decodeFromVideoDevice(
-      null,              // cámara por defecto
-      camView,           // elemento <video>
+      null,
+      camView,
       async (result, err) => {
         if (!scanning) return;
 
@@ -178,17 +196,18 @@ async function startCameraScanner() {
             (typeof result.getText === 'function'
               ? result.getText()
               : result.text) || '';
-          const uuid = text.trim();
 
-          if (!isValidUUID(uuid)) {
-            // QR ajeno → ignorar
+          console.log('QR leído:', text); // debug sano
+
+          const uuid = extractUUID(text);
+          if (!uuid) {
+            // QR que no pertenece al sistema → ignorar
             return;
           }
 
           const now = Date.now();
           if (uuid === lastUUID && now - lastScanTs < 1500) {
-            // evitar doble lectura inmediata
-            return;
+            return; // evitar doble lectura inmediata
           }
 
           lastUUID = uuid;
@@ -197,7 +216,6 @@ async function startCameraScanner() {
           await checkIn(uuid);
         }
 
-        // Errores de lectura son normales mientras escanea.
         if (err && !(err instanceof window.ZXing.NotFoundException)) {
           console.warn('ZXing error:', err);
         }
@@ -223,7 +241,7 @@ async function stopCameraScanner() {
 
   scanning = false;
   try {
-    codeReader.reset(); // detiene stream
+    codeReader.reset();
   } catch (e) {
     console.warn('Error al detener cámara:', e);
   }
@@ -232,7 +250,6 @@ async function stopCameraScanner() {
   if (camStatus) camStatus.textContent = 'Cámara detenida.';
 }
 
-// Toggle botón cámara
 camToggle?.addEventListener('click', () => {
   if (!scanning) {
     startCameraScanner();
