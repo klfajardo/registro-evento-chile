@@ -1,7 +1,7 @@
 // charla.js — Control de acceso. Usa window.CFG.
 // QR: contiene directamente el UUID (sin URL).
 
-import { BrowserMultiFormatReader } from 'https://unpkg.com/@zxing/browser@0.1.4/esm/index.js';
+import { BrowserMultiFormatReader } from 'https://unpkg.com/@zxing/library@0.20.0/esm/index.js';
 
 // ====== CONFIG ======
 const CFG = window.CFG || { SEDE: 'sede', SESSION_ID: '' };
@@ -216,3 +216,4 @@ camToggle?.addEventListener('click', () => {
     camToggle.textContent = 'Usar cámara para escanear';
   }
 });
+
