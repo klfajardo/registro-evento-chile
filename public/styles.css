@@ -169,10 +169,10 @@ body.scan-ok::after {
   font-size: 64px;
   font-weight: 800;
   color: #ffffff;
-  background: rgba(0, 160, 90, 0.35);
+  background: rgba(0, 160, 90, 0.6);
   pointer-events: none;
   opacity: 0;
-  animation: scan-ok-pop 600ms ease-out forwards;
+  animation: scan-ok-pop 1000ms ease-out forwards;
   z-index: 9999;
 }
 
@@ -194,5 +194,6 @@ body.scan-ok::after {
     transform: scale(1);
   }
 }
+
 
 
